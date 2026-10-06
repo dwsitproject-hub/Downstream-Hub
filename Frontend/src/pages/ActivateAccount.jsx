@@ -2,11 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
+import usePasswordRequirements from '../hooks/usePasswordRequirements';
+
+function requirementsText(reqs) {
+  const min = reqs?.min_password_length ?? 6;
+  const parts = [`at least ${min} characters`];
+  if (reqs?.require_uppercase) parts.push('an uppercase letter');
+  if (reqs?.require_lowercase) parts.push('a lowercase letter');
+  if (reqs?.require_number) parts.push('a number');
+  if (reqs?.require_symbol) parts.push('a symbol');
+  return `Use ${parts.join(', ')}.`;
+}
 
 export default function ActivateAccount() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { setSession } = useAuth();
+  const passwordRequirements = usePasswordRequirements();
+  const minPasswordLength = passwordRequirements?.min_password_length ?? 6;
   const token = useMemo(() => searchParams.get('token') || '', [searchParams]);
 
   const [checking, setChecking] = useState(true);
@@ -97,11 +110,14 @@ export default function ActivateAccount() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="form-input"
                 style={styles.input}
                 autoComplete="new-password"
                 required
-                minLength={8}
+                minLength={minPasswordLength}
+                autoFocus
               />
+              <span style={styles.hint}>{requirementsText(passwordRequirements)}</span>
             </label>
             <label style={styles.label}>
               Confirm password
@@ -109,10 +125,11 @@ export default function ActivateAccount() {
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
+                className="form-input"
                 style={styles.input}
                 autoComplete="new-password"
                 required
-                minLength={8}
+                minLength={minPasswordLength}
               />
             </label>
             <button type="submit" className="btn-primary" style={styles.button} disabled={submitting}>
@@ -131,7 +148,8 @@ const styles = {
   title: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   subtitle: { margin: '0 0 var(--space-3)', color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
   label: { display: 'block', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)', fontWeight: 'var(--font-weight-medium)' },
-  input: { display: 'block', width: '100%', marginTop: 'var(--space-1)', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--text-body)', boxSizing: 'border-box' },
+  input: { marginTop: 'var(--space-1)' },
+  hint: { display: 'block', marginTop: 'var(--space-1)', fontSize: 'var(--text-xs)', fontWeight: 'var(--font-weight-normal)', color: 'var(--color-text-steel)' },
   button: { width: '100%', marginTop: 'var(--space-1)' },
   error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
   footer: { marginTop: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', textAlign: 'center' },

@@ -99,6 +99,9 @@ async function createInvited(db, { email, role, business_unit_id }) {
 
 /**
  * Activate an invited user: set their first password, mark active + email verified.
+ * The activation link was delivered to the user's inbox, so completing it proves
+ * email ownership — that also satisfies the SSO email-verification gate
+ * (hub_oidc_email_verified_at), so the user can open SSO apps immediately.
  * Bumps token_version so any stale sessions are invalidated.
  */
 async function activateWithPassword(db, id, password_hash) {
@@ -107,6 +110,7 @@ async function activateWithPassword(db, id, password_hash) {
      SET password_hash = $2,
          is_active = TRUE,
          email_verified_at = COALESCE(email_verified_at, now()),
+         hub_oidc_email_verified_at = COALESCE(hub_oidc_email_verified_at, now()),
          password_changed_at = now(),
          token_version = COALESCE(token_version, 0) + 1,
          failed_login_attempts = 0,

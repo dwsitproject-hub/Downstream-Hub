@@ -9,6 +9,7 @@ import ApplicationIconField from '../components/admin/ApplicationIconField';
 import SsoBadge from '../components/SsoBadge';
 import AdminModal from '../components/admin/AdminModal';
 import AdminFormModal from '../components/admin/AdminFormModal';
+import AnalyticsPanel from '../components/admin/AnalyticsPanel';
 import HubLogo from '../components/HubLogo';
 
 const SECTIONS = [
@@ -104,11 +105,6 @@ export default function Admin() {
   const [ssoPrelinkResult, setSsoPrelinkResult] = useState(null);
   const [ssoEventsUser, setSsoEventsUser] = useState(null);
   const [ssoEvents, setSsoEvents] = useState([]);
-  const [analytics, setAnalytics] = useState(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsDays, setAnalyticsDays] = useState(30);
-  const [bugReports, setBugReports] = useState([]);
-  const [bugFilter, setBugFilter] = useState('open');
   const [passwordExpiryDays, setPasswordExpiryDays] = useState(0);
   const [minPasswordLength, setMinPasswordLength] = useState(6);
   const [requireUppercase, setRequireUppercase] = useState(true);
@@ -174,22 +170,6 @@ export default function Admin() {
       .catch(() => setUsers([]))
       .finally(() => setUsersLoading(false));
   }, [user?.role, activeSection]);
-
-  // Analytics — load only when on analytics section (re-load when the window changes)
-  useEffect(() => {
-    if (user?.role !== 'Admin' || activeSection !== 'analytics') return;
-    setAnalyticsLoading(true);
-    Promise.all([
-      apiRequest(`/api/analytics/summary?days=${analyticsDays}`),
-      apiRequest(`/api/analytics/bug-reports?status=${bugFilter}`),
-    ])
-      .then(([summary, bugs]) => {
-        setAnalytics(summary);
-        setBugReports(bugs.reports || []);
-      })
-      .catch((err) => setError(err.error || 'Failed to load analytics'))
-      .finally(() => setAnalyticsLoading(false));
-  }, [user?.role, activeSection, analyticsDays, bugFilter]);
 
   // Password policy — load only when on password-policy section
   useEffect(() => {
@@ -563,20 +543,6 @@ export default function Admin() {
     }
   }
 
-  async function resolveBug(report, resolved) {
-    setError('');
-    try {
-      await apiRequest(`/api/analytics/bug-reports/${report.id}/resolve`, {
-        method: 'POST',
-        body: JSON.stringify({ resolved }),
-      });
-      const bugs = await apiRequest(`/api/analytics/bug-reports?status=${bugFilter}`);
-      setBugReports(bugs.reports || []);
-    } catch (err) {
-      setError(err.error || 'Failed to update report');
-    }
-  }
-
   async function handleDeactivate() {
     if (!userDeactivateConfirm) return;
     setError('');
@@ -762,7 +728,7 @@ export default function Admin() {
             </Link>
           ))}
         </nav>
-        <main style={styles.main}>
+        <main style={activeSection === 'analytics' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
           {error && <div style={styles.error}>{error}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
 
@@ -1353,111 +1319,7 @@ export default function Admin() {
         </>
           )}
 
-          {activeSection === 'analytics' && (
-        <section style={styles.section}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-            <h2 style={styles.sectionTitle}>Analytic</h2>
-            <select
-              value={analyticsDays}
-              onChange={(e) => setAnalyticsDays(parseInt(e.target.value, 10))}
-              style={styles.modalInput}
-            >
-              <option value={7}>Last 7 days</option>
-              <option value={30}>Last 30 days</option>
-              <option value={90}>Last 90 days</option>
-            </select>
-          </div>
-
-          {analyticsLoading && <p>Loading analytics…</p>}
-
-          {!analyticsLoading && analytics && (
-            <>
-              <div style={an.kpiGrid}>
-                <div style={an.kpi}><div style={an.kpiNum}>{analytics.overview.active_users}</div><div style={an.kpiLabel}>Active users</div></div>
-                <div style={an.kpi}><div style={an.kpiNum}>{analytics.overview.total_launches}</div><div style={an.kpiLabel}>App opens</div></div>
-                <div style={an.kpi}><div style={an.kpiNum}>{analytics.overview.total_sessions}</div><div style={an.kpiLabel}>Hub sessions</div></div>
-                <div style={an.kpi}><div style={an.kpiNum}>{Number(analytics.overview.avg_session_minutes)}m</div><div style={an.kpiLabel}>Avg session</div></div>
-                <div style={an.kpi}><div style={an.kpiNum}>{(Number(analytics.overview.total_minutes) / 60).toFixed(1)}h</div><div style={an.kpiLabel}>Total time in Hub</div></div>
-                <div style={an.kpi}><div style={{ ...an.kpiNum, color: analytics.bugCounts.open > 0 ? 'var(--color-destructive)' : undefined }}>{analytics.bugCounts.open}</div><div style={an.kpiLabel}>Open bug reports</div></div>
-              </div>
-
-              <div style={an.twoCol}>
-                <div style={an.panel}>
-                  <h3 style={an.h3}>Most-used applications</h3>
-                  {analytics.topApps.length === 0 ? <p style={an.empty}>No app opens in this period.</p> : (
-                    <table style={an.table}>
-                      <thead><tr><th style={an.th}>Application</th><th style={an.thR}>Opens</th><th style={an.thR}>Users</th></tr></thead>
-                      <tbody>
-                        {analytics.topApps.map((a) => (
-                          <tr key={a.id}><td style={an.td}>{a.name}</td><td style={an.tdR}>{a.launches}</td><td style={an.tdR}>{a.unique_users}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-                <div style={an.panel}>
-                  <h3 style={an.h3}>Most active users</h3>
-                  {analytics.topUsers.length === 0 ? <p style={an.empty}>No activity in this period.</p> : (
-                    <table style={an.table}>
-                      <thead><tr><th style={an.th}>User</th><th style={an.thR}>Opens</th><th style={an.thR}>Sessions</th><th style={an.thR}>Minutes</th></tr></thead>
-                      <tbody>
-                        {analytics.topUsers.map((u) => (
-                          <tr key={u.id}><td style={an.td}>{u.email}</td><td style={an.tdR}>{u.launches}</td><td style={an.tdR}>{u.sessions}</td><td style={an.tdR}>{Number(u.minutes)}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ ...an.panel, marginTop: 'var(--space-3)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                  <h3 style={an.h3}>Bug reports &amp; errors</h3>
-                  <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
-                    {['open', 'resolved', ''].map((s) => (
-                      <button
-                        key={s || 'all'}
-                        type="button"
-                        onClick={() => setBugFilter(s)}
-                        style={bugFilter === s ? an.tabActive : an.tab}
-                      >
-                        {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {bugReports.length === 0 ? <p style={an.empty}>No reports.</p> : (
-                  <table style={an.table}>
-                    <thead><tr><th style={an.th}>Type</th><th style={an.th}>Message</th><th style={an.th}>Reporter</th><th style={an.th}>When</th><th style={an.th}></th></tr></thead>
-                    <tbody>
-                      {bugReports.map((b) => (
-                        <tr key={b.id}>
-                          <td style={an.td}>
-                            <span style={b.kind === 'client_error' ? an.badgeErr : an.badgeRep}>
-                              {b.kind === 'client_error' ? 'Error' : 'Report'}
-                            </span>
-                          </td>
-                          <td style={an.td}>
-                            <div style={{ maxWidth: 360, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{b.message}</div>
-                            {b.page_url && <div style={an.pageUrl}>{b.page_url}</div>}
-                          </td>
-                          <td style={an.td}>{b.reporter_email || '—'}</td>
-                          <td style={an.td}>{new Date(b.created_at).toLocaleString()}</td>
-                          <td style={an.tdR}>
-                            {b.status === 'resolved'
-                              ? <button type="button" className="btn-secondary" onClick={() => resolveBug(b, false)}>Reopen</button>
-                              : <button type="button" className="btn-primary" onClick={() => resolveBug(b, true)}>Resolve</button>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </>
-          )}
-        </section>
-          )}
+          {activeSection === 'analytics' && <AnalyticsPanel />}
 
           {activeSection === 'password-policy' && (
         <section style={styles.section}>
@@ -1747,26 +1609,4 @@ const styles = {
     cursor: 'pointer',
   },
   inviteHint: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
-};
-
-// Styles for the Analytic section.
-const an = {
-  kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-3)', marginTop: 'var(--space-3)' },
-  kpi: { background: 'var(--color-bg-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', textAlign: 'center' },
-  kpiNum: { fontSize: '26px', fontWeight: 700, color: 'var(--color-text-charcoal)', lineHeight: 1.1 },
-  kpiLabel: { fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', marginTop: '4px' },
-  twoCol: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-3)', marginTop: 'var(--space-3)' },
-  panel: { background: 'var(--color-bg-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)' },
-  h3: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-body)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-small)' },
-  th: { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-steel)', fontWeight: 'var(--font-weight-semibold)' },
-  thR: { textAlign: 'right', padding: '6px 8px', borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-steel)', fontWeight: 'var(--font-weight-semibold)' },
-  td: { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-charcoal)', verticalAlign: 'top' },
-  tdR: { textAlign: 'right', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-charcoal)' },
-  empty: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  pageUrl: { fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', marginTop: '2px', wordBreak: 'break-all' },
-  tab: { padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', background: 'var(--color-bg-white)', fontSize: 'var(--text-small)', cursor: 'pointer', color: 'var(--color-text-steel)' },
-  tabActive: { padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary)', background: 'var(--color-primary)', color: '#fff', fontSize: 'var(--text-small)', cursor: 'pointer' },
-  badgeRep: { display: 'inline-block', padding: '2px 8px', borderRadius: '999px', background: '#E0ECFF', color: '#1D4ED8', fontSize: 'var(--text-xs)', fontWeight: 600 },
-  badgeErr: { display: 'inline-block', padding: '2px 8px', borderRadius: '999px', background: '#FEE2E2', color: '#B91C1C', fontSize: 'var(--text-xs)', fontWeight: 600 },
 };

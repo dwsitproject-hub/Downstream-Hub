@@ -148,3 +148,130 @@ input {
   cursor: wait;
   opacity: 0.85;
 }
+
+/* Text inputs — visible outline + focus ring */
+.form-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-white);
+  color: var(--color-text-charcoal);
+  border: 1px solid var(--color-border-medium);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-family: inherit;
+  transition:
+    border-color var(--duration-fast) var(--easing-default),
+    box-shadow var(--duration-fast) var(--easing-default);
+}
+.form-input:hover {
+  border-color: var(--color-border-dark);
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(196, 58, 49, 0.15);
+}
+
+/* Analytic dashboard — KPI grid: 6 across on wide screens, 3x2 on medium, 2 on narrow */
+.an-kpi-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (min-width: 900px) {
+  .an-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1440px) {
+  .an-kpi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+/* Analytic dashboard — clickable surfaces */
+.an-card {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-fast) var(--easing-default),
+    box-shadow var(--duration-fast) var(--easing-default),
+    transform var(--duration-fast) var(--easing-default);
+}
+.an-card:hover {
+  border-color: var(--color-border-medium);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.an-card:focus-visible,
+.an-link:focus-visible,
+.an-row:focus-visible,
+.an-bar:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.an-card .an-card-cta {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+.an-card:hover .an-card-cta,
+.an-card:focus-visible .an-card-cta {
+  opacity: 1;
+}
+
+.an-row {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default);
+}
+.an-row:hover {
+  background: var(--color-bg-lighter);
+}
+
+.an-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-action-blue);
+  cursor: pointer;
+  text-align: inherit;
+}
+.an-link:hover {
+  color: var(--color-action-blue-deep);
+  text-decoration: underline;
+}
+
+.an-bar {
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+.an-bar:hover {
+  opacity: 0.75;
+}
+
+.an-seg {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+  color: var(--color-text-steel);
+  font-size: var(--text-small);
+  font-family: inherit;
+  cursor: pointer;
+}
+.an-seg + .an-seg {
+  border-left: none;
+}
+.an-seg:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+.an-seg:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.an-seg[aria-pressed='true'] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+}

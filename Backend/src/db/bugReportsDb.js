@@ -36,8 +36,8 @@ async function list(db, { status, kind, limit = 100 } = {}) {
   params.push(Math.min(500, Math.max(1, limit)));
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const { rows } = await db.query(
-    `SELECT b.id, b.kind, b.message, b.page_url, b.stack, b.status, b.created_at,
-            b.resolved_at, u.email AS reporter_email
+    `SELECT b.id, b.kind, b.message, b.page_url, b.stack, b.user_agent, b.status, b.created_at,
+            b.resolved_at, b.user_id, u.email AS reporter_email
      FROM bug_reports b
      LEFT JOIN users u ON u.id = b.user_id
      ${whereSql}

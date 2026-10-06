@@ -63,6 +63,7 @@ export default function BugReportButton() {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
+                  className="form-input"
                   style={styles.textarea}
                   rows={5}
                   placeholder="What happened? What did you expect?"
@@ -88,7 +89,7 @@ const styles = {
   fab: {
     position: 'fixed', right: 'var(--space-4)', bottom: 'var(--space-4)', zIndex: 900,
     display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)',
-    padding: '10px 14px', borderRadius: '999px', border: '1px solid var(--color-border)',
+    padding: '10px 14px', borderRadius: '999px', border: '1px solid var(--color-border-light)',
     background: 'var(--color-bg-white)', boxShadow: 'var(--shadow-md)', cursor: 'pointer',
     fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)', fontWeight: 'var(--font-weight-medium)',
   },
@@ -101,7 +102,7 @@ const styles = {
   modal: { background: 'var(--color-bg-white)', borderRadius: 'var(--radius-md)', padding: 'var(--space-5)', maxWidth: 460, width: '100%', boxShadow: 'var(--shadow-lg)' },
   title: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   subtitle: { margin: '0 0 var(--space-3)', color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  textarea: { width: '100%', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 'var(--text-body)', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' },
+  textarea: { resize: 'vertical', minHeight: 120 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-3)' },
   button: { width: '100%' },
   error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
