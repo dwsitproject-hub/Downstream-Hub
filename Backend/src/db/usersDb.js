@@ -5,7 +5,7 @@
 async function listWithBu(db) {
   const { rows } = await db.query(
     `SELECT u.id, u.email, u.role, u.business_unit_id, u.created_at,
-            u.failed_login_attempts, u.locked_until,
+            u.failed_login_attempts, u.locked_until, u.is_active,
             u.oidc_sub, u.oidc_linked_at, u.oidc_linked_by_mode,
             bu.name AS business_unit_name
      FROM users u
@@ -59,7 +59,7 @@ async function getByIdWithBuName(db, id) {
 
 async function getByEmail(db, email) {
   const { rows } = await db.query(
-    'SELECT id, email, password_hash, role, business_unit_id, password_changed_at, failed_login_attempts, locked_until, token_version, name, mfa_enabled, mfa_method, last_mfa_verified_at FROM users WHERE email = $1 AND deleted_at IS NULL',
+    'SELECT id, email, password_hash, role, business_unit_id, password_changed_at, failed_login_attempts, locked_until, token_version, name, mfa_enabled, mfa_method, last_mfa_verified_at, is_active FROM users WHERE email = $1 AND deleted_at IS NULL',
     [email]
   );
   return rows[0] || null;
@@ -80,6 +80,46 @@ async function create(db, { email, password_hash, role, business_unit_id }) {
     [email, password_hash, role, buId]
   );
   return rows[0];
+}
+
+/**
+ * Create an invited user with NO password, marked inactive until they activate
+ * via the emailed link. Login is blocked (is_active = false) until activation.
+ */
+async function createInvited(db, { email, role, business_unit_id }) {
+  const buId = business_unit_id || null;
+  const { rows } = await db.query(
+    `INSERT INTO users (email, password_hash, role, business_unit_id, is_active)
+     VALUES ($1, NULL, $2, $3, FALSE)
+     RETURNING id, email, role, business_unit_id, created_at, token_version, is_active`,
+    [email, role, buId]
+  );
+  return rows[0];
+}
+
+/**
+ * Activate an invited user: set their first password, mark active + email verified.
+ * The activation link was delivered to the user's inbox, so completing it proves
+ * email ownership — that also satisfies the SSO email-verification gate
+ * (hub_oidc_email_verified_at), so the user can open SSO apps immediately.
+ * Bumps token_version so any stale sessions are invalidated.
+ */
+async function activateWithPassword(db, id, password_hash) {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET password_hash = $2,
+         is_active = TRUE,
+         email_verified_at = COALESCE(email_verified_at, now()),
+         hub_oidc_email_verified_at = COALESCE(hub_oidc_email_verified_at, now()),
+         password_changed_at = now(),
+         token_version = COALESCE(token_version, 0) + 1,
+         failed_login_attempts = 0,
+         locked_until = NULL
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING id, email, role, business_unit_id`,
+    [id, password_hash]
+  );
+  return rows[0] || null;
 }
 
 async function updatePassword(db, id, password_hash) {
@@ -175,6 +215,8 @@ module.exports = {
   setHubOidcEmailVerifiedAt,
   countActive,
   create,
+  createInvited,
+  activateWithPassword,
   updatePassword,
   updateBusinessUnit,
   updateProfile,

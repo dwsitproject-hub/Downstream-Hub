@@ -5,7 +5,7 @@ import { apiRequest } from '../api';
 const AuthContext = createContext(null);
 
 /** Paths where an unauthenticated visitor is expected — skip /api/auth/me to avoid noisy 401s. */
-const PUBLIC_AUTH_PATHS = new Set(['/login', '/magic-link-login']);
+const PUBLIC_AUTH_PATHS = new Set(['/login', '/magic-link-login', '/activate', '/reset-password', '/forgot-password']);
 
 export function AuthProvider({ children }) {
   const location = useLocation();

@@ -1,56 +1,141 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../api';
+import { useAuth } from '../context/AuthContext';
+import usePasswordRequirements from '../hooks/usePasswordRequirements';
+
+function requirementsText(reqs) {
+  const min = reqs?.min_password_length ?? 6;
+  const parts = [`at least ${min} characters`];
+  if (reqs?.require_uppercase) parts.push('an uppercase letter');
+  if (reqs?.require_lowercase) parts.push('a lowercase letter');
+  if (reqs?.require_number) parts.push('a number');
+  if (reqs?.require_symbol) parts.push('a symbol');
+  return `Use ${parts.join(', ')}.`;
+}
 
 export default function ActivateAccount() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { setSession } = useAuth();
+  const passwordRequirements = usePasswordRequirements();
+  const minPasswordLength = passwordRequirements?.min_password_length ?? 6;
   const token = useMemo(() => searchParams.get('token') || '', [searchParams]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('Checking activation link...');
+
+  const [checking, setChecking] = useState(true);
+  const [valid, setValid] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    async function activate() {
+    let active = true;
+    async function check() {
       if (!token) {
-        setError('Missing activation token.');
-        setLoading(false);
-        setMessage('');
+        if (active) { setError('Missing activation token.'); setChecking(false); }
         return;
       }
       try {
         const info = await apiRequest(`/api/auth/activate-account/token-info?token=${encodeURIComponent(token)}`);
-        if (!info.valid) {
-          setError('This activation link is invalid or has expired.');
-          setMessage('');
-          setLoading(false);
-          return;
+        if (!active) return;
+        if (info.valid) {
+          setValid(true);
+          setEmail(info.email || '');
+        } else {
+          setError('This activation link is invalid or has expired. Ask your administrator to resend it.');
         }
-        setMessage('Activating your account...');
-        const result = await apiRequest('/api/auth/activate-account', {
-          method: 'POST',
-          body: JSON.stringify({ token }),
-        });
-        setMessage(result.message || 'Account activated. You can now sign in.');
-      } catch (err) {
-        setError(err.error || 'Failed to activate account.');
-        setMessage('');
+      } catch {
+        if (active) setError('Could not verify the activation link. Please try again.');
       } finally {
-        setLoading(false);
+        if (active) setChecking(false);
       }
     }
-    activate();
+    check();
+    return () => { active = false; };
   }, [token]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (password !== confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await apiRequest('/api/auth/activate-account', {
+        method: 'POST',
+        body: JSON.stringify({ token, new_password: password, new_password_retype: confirm }),
+      });
+      setDone(true);
+      if (result.user) {
+        // Session cookie is set by the server — go straight into the Hub.
+        setSession(null, result.user);
+        navigate('/', { replace: true });
+      } else {
+        navigate('/login', { replace: true });
+      }
+    } catch (err) {
+      setError(err.error || 'Failed to activate account.');
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Account activation</h1>
-        {message && <p style={styles.subtitle}>{message}</p>}
-        {error && <div style={styles.error}>{error}</div>}
-        {!loading && (
-          <p style={styles.footer}>
-            <Link to="/login">Go to sign in</Link>
-          </p>
+        <h1 style={styles.title}>Complete your registration</h1>
+
+        {checking && <p style={styles.subtitle}>Checking your activation link…</p>}
+
+        {!checking && !valid && (
+          <>
+            {error && <div style={styles.error}>{error}</div>}
+            <p style={styles.footer}><Link to="/login">Go to sign in</Link></p>
+          </>
+        )}
+
+        {!checking && valid && !done && (
+          <form onSubmit={handleSubmit}>
+            <p style={styles.subtitle}>
+              {email ? <>Set a password for <strong>{email}</strong> to finish setting up your account.</> : 'Set a password to finish setting up your account.'}
+            </p>
+            {error && <div style={styles.error}>{error}</div>}
+            <label style={styles.label}>
+              New password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="form-input"
+                style={styles.input}
+                autoComplete="new-password"
+                required
+                minLength={minPasswordLength}
+                autoFocus
+              />
+              <span style={styles.hint}>{requirementsText(passwordRequirements)}</span>
+            </label>
+            <label style={styles.label}>
+              Confirm password
+              <input
+                type="password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className="form-input"
+                style={styles.input}
+                autoComplete="new-password"
+                required
+                minLength={minPasswordLength}
+              />
+            </label>
+            <button type="submit" className="btn-primary" style={styles.button} disabled={submitting}>
+              {submitting ? 'Activating…' : 'Activate & sign in'}
+            </button>
+          </form>
         )}
       </div>
     </div>
@@ -62,6 +147,10 @@ const styles = {
   card: { background: 'var(--color-bg-white)', padding: 'var(--space-5)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', maxWidth: 420, width: '100%' },
   title: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   subtitle: { margin: '0 0 var(--space-3)', color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)' },
+  label: { display: 'block', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)', fontWeight: 'var(--font-weight-medium)' },
+  input: { marginTop: 'var(--space-1)' },
+  hint: { display: 'block', marginTop: 'var(--space-1)', fontSize: 'var(--text-xs)', fontWeight: 'var(--font-weight-normal)', color: 'var(--color-text-steel)' },
+  button: { width: '100%', marginTop: 'var(--space-1)' },
+  error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
   footer: { marginTop: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', textAlign: 'center' },
 };

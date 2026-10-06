@@ -9,6 +9,7 @@ import ApplicationIconField from '../components/admin/ApplicationIconField';
 import SsoBadge from '../components/SsoBadge';
 import AdminModal from '../components/admin/AdminModal';
 import AdminFormModal from '../components/admin/AdminFormModal';
+import AnalyticsPanel from '../components/admin/AnalyticsPanel';
 import HubLogo from '../components/HubLogo';
 
 const SECTIONS = [
@@ -16,6 +17,7 @@ const SECTIONS = [
   { id: 'business-units', label: 'Departments', path: 'business-units' },
   { id: 'users', label: 'Users', path: 'users' },
   { id: 'applications', label: 'Applications', path: 'applications' },
+  { id: 'analytics', label: 'Analytic', path: 'analytics' },
   { id: 'password-policy', label: 'Password policy', path: 'password-policy' },
 ];
 
@@ -518,12 +520,10 @@ export default function Admin() {
     setError('');
     setAddUserSaving(true);
     try {
-      await apiRequest('/api/users', {
+      const result = await apiRequest('/api/users', {
         method: 'POST',
         body: JSON.stringify({
           email: addUserForm.email.trim(),
-          password: addUserForm.password,
-          password_retype: addUserForm.password_retype,
           role: addUserForm.role,
           business_unit_id: addUserForm.business_unit_id === '' ? null : addUserForm.business_unit_id,
         }),
@@ -531,7 +531,11 @@ export default function Admin() {
       await loadUsers();
       setAddUserForm({ email: '', password: '', password_retype: '', role: 'Employee', business_unit_id: '' });
       closeAddUserForm();
-      setSuccessMessage('User created.');
+      setSuccessMessage(
+        result.activation_email_sent === false
+          ? 'User created, but the activation email could not be sent. Check SMTP settings / server logs.'
+          : 'Invitation sent. The user will receive an email to set their password.'
+      );
     } catch (err) {
       setError(err.error || 'Create failed');
     } finally {
@@ -724,7 +728,7 @@ export default function Admin() {
             </Link>
           ))}
         </nav>
-        <main style={styles.main}>
+        <main style={activeSection === 'analytics' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
           {error && <div style={styles.error}>{error}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
 
@@ -876,9 +880,12 @@ export default function Admin() {
             onClose={closeAddUserForm}
             onSubmit={handleAddUser}
             saving={addUserSaving}
-            saveLabel="Create user"
-            savingLabel="Creating…"
+            saveLabel="Send invitation"
+            savingLabel="Sending…"
           >
+            <p style={styles.inviteHint}>
+              The user will receive an email to verify their address and set their own password. No password is set here.
+            </p>
             <input
               type="email"
               placeholder="Email"
@@ -887,24 +894,6 @@ export default function Admin() {
               style={styles.modalInput}
               required
               autoFocus
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={addUserForm.password}
-              onChange={(e) => setAddUserForm((f) => ({ ...f, password: e.target.value }))}
-              style={styles.modalInput}
-              minLength={6}
-              required
-            />
-            <input
-              type="password"
-              placeholder="Confirm password"
-              value={addUserForm.password_retype}
-              onChange={(e) => setAddUserForm((f) => ({ ...f, password_retype: e.target.value }))}
-              style={styles.modalInput}
-              minLength={6}
-              required
             />
             <select
               value={addUserForm.role}
@@ -942,7 +931,14 @@ export default function Admin() {
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td style={styles.tableCell}>{u.email}</td>
+                    <td style={styles.tableCell}>
+                      {u.email}
+                      {u.is_active === false && (
+                        <span style={{ marginLeft: 8, display: 'inline-block', padding: '1px 8px', borderRadius: '999px', background: '#FEF3C7', color: '#92400E', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+                          Pending activation
+                        </span>
+                      )}
+                    </td>
                     <td style={styles.tableCell}>{u.role}</td>
                     <td style={styles.tableCell}>{u.business_unit_name || '—'}</td>
                     <td style={styles.tableCell}>{u.locked_until && new Date(u.locked_until) > new Date() ? 'Locked' : '—'}</td>
@@ -1323,6 +1319,8 @@ export default function Admin() {
         </>
           )}
 
+          {activeSection === 'analytics' && <AnalyticsPanel />}
+
           {activeSection === 'password-policy' && (
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Password policy</h2>
@@ -1610,4 +1608,5 @@ const styles = {
     color: 'var(--color-text-charcoal)',
     cursor: 'pointer',
   },
+  inviteHint: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
 };
