@@ -14,6 +14,7 @@ const businessUnitsDb = require('../db/businessUnitsDb');
 const passwordPolicyDb = require('../db/passwordPolicyDb');
 const passwordHistoryDb = require('../db/passwordHistoryDb');
 const passwordResetDb = require('../db/passwordResetDb');
+const accountActivationDb = require('../db/accountActivationDb');
 const usersDb = require('../db/usersDb');
 const ssoLinkDb = require('../db/ssoLinkDb');
 const authSessionsDb = require('../db/authSessionsDb');
@@ -476,6 +477,12 @@ router.post('/login', loginLimit, async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+    if (user.is_active === false) {
+      return res.status(403).json({
+        error: 'Your account is not activated yet. Please use the activation link sent to your email.',
+        code: 'ACCOUNT_NOT_ACTIVATED',
+      });
+    }
     const policy = await passwordPolicyDb.get(pool);
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
       return res.status(423).json({ error: 'Account locked', code: 'ACCOUNT_LOCKED', locked_until: user.locked_until });
@@ -679,6 +686,12 @@ router.post('/magic-link/resend', magicLinkResendLimit, loginLimit, async (req, 
     const user = await usersDb.getByEmail(pool, emailNorm);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    if (user.is_active === false) {
+      return res.status(403).json({
+        error: 'Your account is not activated yet. Please use the activation link sent to your email.',
+        code: 'ACCOUNT_NOT_ACTIVATED',
+      });
     }
     const policy = await passwordPolicyDb.get(pool);
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -1026,6 +1039,81 @@ router.post('/reset-password', async (req, res) => {
     return res.status(500).json({ error: 'Failed to reset password' });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/auth/activate-account/token-info — validate an invitation token (no auth)
+router.get('/activate-account/token-info', async (req, res) => {
+  try {
+    const raw = req.query.token;
+    if (!raw || typeof raw !== 'string') return res.json({ valid: false });
+    const tokenHash = hashToken(raw);
+    const row = await accountActivationDb.findActiveByHash(pool, tokenHash);
+    if (!row || new Date(row.expires_at) < new Date()) return res.json({ valid: false });
+    const user = await usersDb.getById(pool, row.user_id);
+    if (!user) return res.json({ valid: false });
+    return res.json({ valid: true, email: user.email });
+  } catch (err) {
+    console.error('Activation token info error:', err);
+    return res.json({ valid: false });
+  }
+});
+
+// POST /api/auth/activate-account — set first password, activate, and sign in (no prior auth)
+router.post('/activate-account', async (req, res) => {
+  const { token: rawToken, new_password, new_password_retype } = req.body || {};
+  if (!rawToken || typeof rawToken !== 'string') {
+    return res.status(400).json({ error: 'Activation token required' });
+  }
+  if (!new_password || !new_password_retype) {
+    return res.status(400).json({ error: 'Password and confirmation are required' });
+  }
+  if (new_password !== new_password_retype) {
+    return res.status(400).json({ error: 'Password and confirm do not match' });
+  }
+
+  const client = await pool.connect();
+  let activatedUser = null;
+  try {
+    const tokenHash = hashToken(rawToken);
+    await client.query('BEGIN');
+    const row = await accountActivationDb.findActiveByHash(client, tokenHash);
+    if (!row || new Date(row.expires_at) < new Date()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This activation link is invalid or has expired.' });
+    }
+    const user = await usersDb.getById(client, row.user_id);
+    if (!user) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This activation link is invalid or has expired.' });
+    }
+    const policy = await passwordPolicyDb.get(client);
+    const pv = validatePassword(new_password, policy);
+    if (!pv.valid) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: pv.error });
+    }
+    const password_hash = await bcrypt.hash(new_password, 10);
+    activatedUser = await usersDb.activateWithPassword(client, user.id, password_hash);
+    await accountActivationDb.markUsed(client, row.id);
+    await accountActivationDb.invalidatePendingForUser(client, user.id);
+    await client.query('COMMIT');
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    console.error('Activate account error:', err);
+    return res.status(500).json({ error: 'Failed to activate account' });
+  } finally {
+    client.release();
+  }
+
+  // Log the user in immediately so they land on the Hub.
+  try {
+    const session = await issueFullSession(req, res, activatedUser, 'ACCOUNT_ACTIVATED');
+    return res.json({ message: 'Account activated.', ...session });
+  } catch (err) {
+    console.error('Activation session error:', err);
+    // Activation succeeded even if session issuance failed; let them sign in normally.
+    return res.json({ message: 'Account activated. Please sign in.' });
   }
 });
 

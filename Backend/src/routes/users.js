@@ -13,10 +13,17 @@ const allowedDomainsDb = require('../db/allowedDomainsDb');
 const passwordPolicyDb = require('../db/passwordPolicyDb');
 const passwordHistoryDb = require('../db/passwordHistoryDb');
 const ssoLinkService = require('../services/ssoLinkService');
+const accountActivationDb = require('../db/accountActivationDb');
 const { validatePassword } = require('../lib/passwordValidation');
 const { authMiddleware, requireAdmin } = require('../middleware/auth');
 const { auditLog, getClientIp } = require('../middleware/audit');
 const mailer = require('../lib/mailer');
+
+const ACTIVATION_TTL_HOURS = Math.max(1, Math.min(168, parseInt(process.env.ACTIVATION_TTL_HOURS || '48', 10)));
+
+function publicAppBase() {
+  return (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
 
 const router = express.Router();
 
@@ -42,6 +49,7 @@ router.get('/', authMiddleware, requireAdmin, async (req, res) => {
       business_unit_name: r.business_unit_name || null,
       created_at: r.created_at,
       locked_until: r.locked_until || null,
+      is_active: r.is_active !== false,
       oidc_linked: !!r.oidc_sub,
       oidc_linked_at: r.oidc_linked_at || null,
       oidc_linked_by_mode: r.oidc_linked_by_mode || null,
@@ -221,24 +229,18 @@ router.post('/:id/sso-unlink', authMiddleware, requireAdmin, async (req, res) =>
   }
 });
 
-// POST /api/users — manual user creation (Admin only)
+// POST /api/users — invite a new user (Admin only).
+// Creates an inactive account with no password and emails an activation link;
+// the user sets their own password to complete registration.
 router.post('/', authMiddleware, requireAdmin, async (req, res) => {
   try {
-    const { email, password, password_retype, role, business_unit_id } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
-    if (password !== password_retype) {
-      return res.status(400).json({ error: 'Password and confirm password do not match' });
+    const { email, role, business_unit_id } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ error: 'Email required' });
     }
     const emailNorm = String(email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
       return res.status(400).json({ error: 'Invalid email format' });
-    }
-    const policy = await passwordPolicyDb.get(pool);
-    const pv = validatePassword(password, policy);
-    if (!pv.valid) {
-      return res.status(400).json({ error: pv.error });
     }
     const validRoles = ['Admin', 'Employee'];
     const roleVal = role != null && role !== '' ? String(role) : 'Employee';
@@ -261,17 +263,45 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
       }
       buId = bu.id;
     }
-    const password_hash = await bcrypt.hash(password, 10);
-    const user = await usersDb.create(pool, { email: emailNorm, password_hash, role: roleVal, business_unit_id: buId });
+
+    const user = await usersDb.createInvited(pool, { email: emailNorm, role: roleVal, business_unit_id: buId });
+
+    // Issue a one-time activation token and email the completion link.
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
+    const expiresAt = new Date(Date.now() + ACTIVATION_TTL_HOURS * 60 * 60 * 1000);
+    await accountActivationDb.invalidatePendingForUser(pool, user.id);
+    await accountActivationDb.insert(pool, {
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      requestIp: getClientIp(req),
+    });
+    const activateUrl = `${publicAppBase()}/activate?token=${encodeURIComponent(rawToken)}`;
+    let emailSent = true;
+    try {
+      const result = await mailer.sendAccountActivationEmail({ to: emailNorm, activateUrl, ttlHours: ACTIVATION_TTL_HOURS });
+      emailSent = !result.skipped;
+    } catch (mailErr) {
+      emailSent = false;
+      console.error('Activation email error:', mailErr.message);
+    }
+
     await auditLog(pool, {
       actorId: req.user.id,
       actionType: 'CREATE',
       targetEntity: `user:${user.email}`,
       payloadBefore: null,
-      payloadAfter: { id: user.id, email: user.email, role: user.role, business_unit_id: user.business_unit_id },
+      payloadAfter: { id: user.id, email: user.email, role: user.role, business_unit_id: user.business_unit_id, invited: true },
       ipAddress: getClientIp(req),
     });
-    res.status(201).json({ user: { id: user.id, email: user.email, role: user.role, business_unit_id: user.business_unit_id, created_at: user.created_at } });
+    res.status(201).json({
+      user: { id: user.id, email: user.email, role: user.role, business_unit_id: user.business_unit_id, created_at: user.created_at, is_active: false },
+      activation_email_sent: emailSent,
+      message: emailSent
+        ? 'Invitation sent. The user will receive an email to set their password.'
+        : 'User created, but the activation email could not be sent. Check SMTP settings or server logs for the link.',
+    });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already registered' });
     console.error('Create user error:', err);

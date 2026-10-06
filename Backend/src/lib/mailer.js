@@ -300,8 +300,42 @@ function closeTransport() {
   }
 }
 
+/**
+ * Invitation to a newly created account: complete registration by setting a password.
+ * @param {{ to: string, activateUrl: string, ttlHours?: number }} opts
+ */
+async function sendAccountActivationEmail({ to, activateUrl, ttlHours }) {
+  const subject = 'Activate your Downstream Hub account';
+  const expiryNote = ttlHours ? `This link expires in ${ttlHours} hour(s).` : 'This link expires soon.';
+  const { html, text } = buildBrandedEmail({
+    preheader: 'Activate your Downstream Hub account',
+    heading: 'Welcome to Downstream Hub',
+    intro:
+      'An administrator created an account for you. To finish setting up, use the button below to verify your email and choose your password.',
+    note: expiryNote,
+    cta: { label: 'Complete registration', url: activateUrl },
+    footerNote: 'If you were not expecting this invitation, you can ignore this email.',
+  });
+
+  if (!smtpConfigured()) {
+    console.info('[mailer] SMTP not configured; account activation link (dev only):');
+    console.info(activateUrl);
+    return { skipped: true };
+  }
+  const info = await sendViaSmtp({
+    from: fromAddress(),
+    to,
+    subject,
+    text,
+    html,
+  });
+  console.info('[mailer] Account activation email sent via SMTP', info.messageId || '');
+  return { skipped: false };
+}
+
 module.exports = {
   sendPasswordResetEmail,
+  sendAccountActivationEmail,
   sendPasswordChangedEmail,
   sendOtpEmail,
   sendLoginMagicLinkEmail,

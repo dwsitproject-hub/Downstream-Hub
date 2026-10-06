@@ -8,6 +8,8 @@ import ChangePassword from './pages/ChangePassword';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import MagicLinkLogin from './pages/MagicLinkLogin';
+import ActivateAccount from './pages/ActivateAccount';
+import ActivityTracker from './components/ActivityTracker';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -22,6 +24,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/activate" element={<ActivateAccount />} />
       <Route path="/magic-link-login" element={<MagicLinkLogin />} />
       <Route path="/change-password-expired" element={<ChangePasswordExpired />} />
       <Route
@@ -44,6 +47,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ActivityTracker />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>

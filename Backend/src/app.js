@@ -12,6 +12,8 @@ const businessUnitsRoutes = require('./routes/businessUnits');
 const usersRoutes = require('./routes/users');
 const settingsRoutes = require('./routes/settings');
 const ssoRoutes = require('./routes/sso');
+const activityRoutes = require('./routes/activity');
+const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 app.disable('x-powered-by');
@@ -76,5 +78,7 @@ app.use('/api/business-units', businessUnitsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/sso', ssoRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 module.exports = app;
