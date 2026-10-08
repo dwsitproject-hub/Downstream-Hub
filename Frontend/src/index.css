@@ -174,6 +174,28 @@ input {
   box-shadow: 0 0 0 3px rgba(196, 58, 49, 0.15);
 }
 
+/* Applications admin — clickable app cards */
+.app-card {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--easing-default),
+    box-shadow var(--duration-fast) var(--easing-default),
+    transform var(--duration-fast) var(--easing-default);
+}
+.app-card:hover {
+  border-color: var(--color-border-medium);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.app-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 /* Analytic dashboard — KPI grid: 6 across on wide screens, 3x2 on medium, 2 on narrow */
 .an-kpi-grid {
   display: grid;

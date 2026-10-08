@@ -44,12 +44,13 @@ router.put('/password-policy', authMiddleware, requireAdmin, async (req, res) =>
     if (body.mfa_risk_threshold !== undefined) payload.mfa_risk_threshold = body.mfa_risk_threshold;
     if (body.login_mfa_bypass_mode !== undefined) {
       const mode = String(body.login_mfa_bypass_mode).trim();
-      if (mode !== 'rolling_24h' && mode !== 'calendar_day') {
-        return res.status(400).json({ error: 'login_mfa_bypass_mode must be rolling_24h or calendar_day' });
+      if (!passwordPolicyDb.BYPASS_MODES.includes(mode)) {
+        return res.status(400).json({ error: `login_mfa_bypass_mode must be one of: ${passwordPolicyDb.BYPASS_MODES.join(', ')}` });
       }
       payload.login_mfa_bypass_mode = mode;
     }
     if (body.login_mfa_bypass_hours !== undefined) payload.login_mfa_bypass_hours = body.login_mfa_bypass_hours;
+    if (body.login_mfa_bypass_days !== undefined) payload.login_mfa_bypass_days = body.login_mfa_bypass_days;
     if (body.login_mfa_bypass_timezone !== undefined) payload.login_mfa_bypass_timezone = body.login_mfa_bypass_timezone;
 
     if (Object.keys(payload).length === 0) {

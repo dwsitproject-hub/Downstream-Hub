@@ -2,14 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest, apiUpload } from '../api';
-import { applicationInitials } from '../utils/applicationInitials';
-import { resolveIconSrc } from '../utils/resolveIconSrc';
 import MultiSelectDropdown from '../components/admin/MultiSelectDropdown';
 import ApplicationIconField from '../components/admin/ApplicationIconField';
-import SsoBadge from '../components/SsoBadge';
 import AdminModal from '../components/admin/AdminModal';
 import AdminFormModal from '../components/admin/AdminFormModal';
 import AnalyticsPanel from '../components/admin/AnalyticsPanel';
+import ApplicationsView from '../components/admin/ApplicationsView';
 import HubLogo from '../components/HubLogo';
 
 const SECTIONS = [
@@ -100,6 +98,7 @@ export default function Admin() {
   const [showAddUserForm, setShowAddUserForm] = useState(false);
   const [addUserForm, setAddUserForm] = useState({ email: '', password: '', password_retype: '', role: 'Employee', business_unit_id: '' });
   const [addUserSaving, setAddUserSaving] = useState(false);
+  const [resendingUserId, setResendingUserId] = useState(null);
   const [userDeactivateConfirm, setUserDeactivateConfirm] = useState(null);
   const [resetPasswordResult, setResetPasswordResult] = useState(null);
   const [ssoPrelinkResult, setSsoPrelinkResult] = useState(null);
@@ -116,6 +115,7 @@ export default function Admin() {
   const [lockoutDurationMins, setLockoutDurationMins] = useState(30);
   const [loginMfaBypassMode, setLoginMfaBypassMode] = useState('rolling_24h');
   const [loginMfaBypassHours, setLoginMfaBypassHours] = useState(24);
+  const [loginMfaBypassDays, setLoginMfaBypassDays] = useState(7);
   const [loginMfaBypassTimezone, setLoginMfaBypassTimezone] = useState('UTC');
   const [policyLoading, setPolicyLoading] = useState(true);
   const [policySaving, setPolicySaving] = useState(false);
@@ -189,6 +189,7 @@ export default function Admin() {
         setLockoutDurationMins(data.lockout_duration_mins ?? 30);
         setLoginMfaBypassMode(data.login_mfa_bypass_mode ?? 'rolling_24h');
         setLoginMfaBypassHours(data.login_mfa_bypass_hours ?? 24);
+        setLoginMfaBypassDays(data.login_mfa_bypass_days ?? 7);
         setLoginMfaBypassTimezone(data.login_mfa_bypass_timezone ?? 'UTC');
       })
       .catch((err) => {
@@ -221,19 +222,21 @@ export default function Admin() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appBuFilterIds, appBuFilterIncludeGlobal, appSearchQuery, activeSection]);
 
-  // Filtered application list (client-side; Phase C wires target_bu_ids[] from junction)
   const filteredApplications = useMemo(() => {
     const q = appSearchQuery.trim().toLowerCase();
     return applications.filter((app) => {
-      // Text search
-      if (q && !app.name.toLowerCase().includes(q) && !app.target_url.toLowerCase().includes(q)) {
-        return false;
+      // Text search: name, description, URL
+      if (q) {
+        const haystack = `${app.name} ${app.description || ''} ${app.target_url}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
       }
-      // BU filter
+      // Department filter — apps can target several departments (target_bu_ids); none = Global
       if (appBuFilterIds.length > 0) {
-        const isGlobal = !app.target_bu_id;
-        if (isGlobal) return appBuFilterIncludeGlobal;
-        return appBuFilterIds.includes(app.target_bu_id);
+        const buIds = Array.isArray(app.target_bu_ids) && app.target_bu_ids.length > 0
+          ? app.target_bu_ids
+          : (app.target_bu_id ? [app.target_bu_id] : []);
+        if (buIds.length === 0) return appBuFilterIncludeGlobal;
+        return buIds.some((id) => appBuFilterIds.includes(id));
       }
       return true;
     });
@@ -271,8 +274,9 @@ export default function Admin() {
         password_history_count: Math.max(0, Math.min(24, parseInt(String(passwordHistoryCount), 10) || 5)),
         max_login_attempts: Math.max(1, Math.min(10, parseInt(String(maxLoginAttempts), 10) || 5)),
         lockout_duration_mins: Math.max(1, Math.min(1440, parseInt(String(lockoutDurationMins), 10) || 30)),
-        login_mfa_bypass_mode: loginMfaBypassMode === 'calendar_day' ? 'calendar_day' : 'rolling_24h',
+        login_mfa_bypass_mode: ['rolling_24h', 'calendar_day', 'rolling_days'].includes(loginMfaBypassMode) ? loginMfaBypassMode : 'rolling_24h',
         login_mfa_bypass_hours: Math.max(1, Math.min(168, parseInt(String(loginMfaBypassHours), 10) || 24)),
+        login_mfa_bypass_days: Math.max(1, Math.min(90, parseInt(String(loginMfaBypassDays), 10) || 7)),
         login_mfa_bypass_timezone: String(loginMfaBypassTimezone || 'UTC').trim().slice(0, 64) || 'UTC',
       };
       const data = await apiRequest('/api/settings/password-policy', { method: 'PUT', body: JSON.stringify(payload) });
@@ -292,6 +296,7 @@ export default function Admin() {
       setLockoutDurationMins(data.lockout_duration_mins ?? 30);
       setLoginMfaBypassMode(data.login_mfa_bypass_mode ?? 'rolling_24h');
       setLoginMfaBypassHours(data.login_mfa_bypass_hours ?? 24);
+      setLoginMfaBypassDays(data.login_mfa_bypass_days ?? 7);
       setLoginMfaBypassTimezone(data.login_mfa_bypass_timezone ?? 'UTC');
     } catch (err) {
       setError(err.error || 'Failed to save password policy');
@@ -575,6 +580,22 @@ export default function Admin() {
     }
   }
 
+  async function handleResendActivation(u) {
+    setError('');
+    setSuccessMessage('');
+    setResendingUserId(u.id);
+    try {
+      const data = await apiRequest(`/api/users/${u.id}/resend-activation`, { method: 'POST' });
+      if (data.activation_email_sent === false) setError(data.message);
+      else setSuccessMessage(data.message || `Activation email re-sent to ${u.email}.`);
+      await loadUsers();
+    } catch (err) {
+      setError(err.error || 'Failed to resend activation email');
+    } finally {
+      setResendingUserId(null);
+    }
+  }
+
   async function handleGenerateSsoLink(u) {
     setError('');
     try {
@@ -728,7 +749,7 @@ export default function Admin() {
             </Link>
           ))}
         </nav>
-        <main style={activeSection === 'analytics' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
+        <main style={activeSection === 'analytics' || activeSection === 'applications' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
           {error && <div style={styles.error}>{error}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
 
@@ -944,6 +965,17 @@ export default function Admin() {
                     <td style={styles.tableCell}>{u.locked_until && new Date(u.locked_until) > new Date() ? 'Locked' : '—'}</td>
                     <td style={styles.tableCell}>{u.oidc_linked ? 'Linked' : 'Not linked'}</td>
                     <td style={styles.actionsCell}>
+                      {u.is_active === false && (
+                        <button
+                          type="button"
+                          className="btn-primary btn-compact"
+                          onClick={() => handleResendActivation(u)}
+                          disabled={resendingUserId === u.id}
+                          title="Resend invite — emails a new activation link; earlier links stop working"
+                        >
+                          {resendingUserId === u.id ? 'Sending…' : 'Resend invite'}
+                        </button>
+                      )}
                       <button type="button" className="btn-secondary btn-compact" onClick={() => openUserEdit(u)}>Edit</button>
                       {u.locked_until && new Date(u.locked_until) > new Date() && (
                         <button type="button" className="btn-secondary btn-compact" onClick={() => handleUnlock(u)}>Unlock</button>
@@ -959,7 +991,9 @@ export default function Admin() {
                         </button>
                         {userMoreMenuId === u.id && (
                           <div style={styles.moreMenu} onMouseLeave={() => setUserMoreMenuId(null)}>
-                            <button type="button" style={styles.moreMenuItem} onClick={() => { handleResetPassword(u); setUserMoreMenuId(null); }}>Reset password</button>
+                            {u.is_active !== false && (
+                              <button type="button" style={styles.moreMenuItem} onClick={() => { handleResetPassword(u); setUserMoreMenuId(null); }}>Reset password</button>
+                            )}
                             <button type="button" style={styles.moreMenuItem} onClick={() => { handleGenerateSsoLink(u); setUserMoreMenuId(null); }}>Generate SSO link</button>
                             <button type="button" style={styles.moreMenuItem} onClick={() => { handleLoadSsoEvents(u); setUserMoreMenuId(null); }}>View SSO history</button>
                             {u.oidc_linked && (
@@ -1101,44 +1135,23 @@ export default function Admin() {
 
           {activeSection === 'applications' && (
         <>
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>Applications</h2>
-          <p style={styles.sectionDesc}>Manage internal apps and who can see them.</p>
-        </section>
-        <div style={styles.appToolbar}>
-          <button type="button" className="btn-secondary" onClick={openCreate}>Add application</button>
-          <div style={styles.appToolbarFilters}>
-            <input
-              type="search"
-              placeholder="Search by name or URL…"
-              value={appSearchQuery}
-              onChange={(e) => setAppSearchQuery(e.target.value)}
-              style={styles.appSearchInput}
-              aria-label="Search applications"
-            />
-            <MultiSelectDropdown
-              options={businessUnits.map((bu) => ({ id: bu.id, label: bu.name }))}
-              selected={appBuFilterIds}
-              onChange={setAppBuFilterIds}
-              placeholder="Filter by Department"
-              includeAllOption
-              includeGlobal={appBuFilterIncludeGlobal}
-              onIncludeGlobalChange={setAppBuFilterIncludeGlobal}
-            />
-            {hasAppFilters && (
-              <button type="button" className="btn-secondary" onClick={clearAppFilters}>
-                Clear filters
-              </button>
-            )}
-          </div>
-        </div>
-        {!loading && applications.length > 0 && (
-          <p style={styles.appResultCount}>
-            {filteredApplications.length === applications.length
-              ? `${applications.length} application${applications.length === 1 ? '' : 's'}`
-              : `Showing ${filteredApplications.length} of ${applications.length} applications`}
-          </p>
-        )}
+        <ApplicationsView
+          applications={applications}
+          filteredApplications={filteredApplications}
+          loading={loading}
+          businessUnits={businessUnits}
+          search={appSearchQuery}
+          onSearchChange={setAppSearchQuery}
+          buFilterIds={appBuFilterIds}
+          onBuFilterChange={setAppBuFilterIds}
+          buIncludeGlobal={appBuFilterIncludeGlobal}
+          onBuIncludeGlobalChange={setAppBuFilterIncludeGlobal}
+          hasFilters={hasAppFilters}
+          onClearFilters={clearAppFilters}
+          onAdd={openCreate}
+          onEdit={openEdit}
+          onDelete={setDeleteConfirm}
+        />
 
         <AdminFormModal
           open={showForm}
@@ -1239,66 +1252,6 @@ export default function Admin() {
               )}
             </div>
         </AdminFormModal>
-
-        {loading ? (
-          <p>Loading…</p>
-        ) : applications.length === 0 ? (
-          <div style={styles.emptyState}>
-            <p style={styles.emptyStateText}>No applications yet. Add your first internal app to get started.</p>
-            <button type="button" className="btn-secondary" onClick={openCreate}>Add application</button>
-          </div>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.tableHeader}>App</th>
-                <th style={styles.tableHeader}>Target URL</th>
-                <th style={styles.tableHeader}>Visibility</th>
-                <th style={{ ...styles.tableHeader, width: 80 }}>SSO</th>
-                <th style={{ ...styles.tableHeader, width: 130, minWidth: 130 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredApplications.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ ...styles.tableCell, textAlign: 'center', padding: 'var(--space-5)' }}>
-                    <p style={styles.emptyFilterText}>No applications match your search or filters.</p>
-                    <button type="button" className="btn-secondary" onClick={clearAppFilters}>Clear filters</button>
-                  </td>
-                </tr>
-              ) : filteredApplications.map((app) => {
-                const iconSrc = resolveIconSrc(app.icon_url);
-                return (
-                <tr key={app.id}>
-                  <td style={styles.tableCell}>
-                    <div style={styles.appCellInner}>
-                      {iconSrc ? (
-                        <img src={iconSrc} alt="" style={styles.tableIconImg} />
-                      ) : (
-                        <span style={styles.tableIconInitials}>{applicationInitials(app.name)}</span>
-                      )}
-                      <span style={styles.appName}>{app.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ ...styles.tableCell, ...styles.urlCell }} title={app.target_url}>{app.target_url}</td>
-                  <td style={styles.tableCell}>
-                    {Array.isArray(app.target_bu_names) && app.target_bu_names.length > 0
-                      ? app.target_bu_names.join(', ')
-                      : (app.target_bu_name || 'Global')}
-                  </td>
-                  <td style={styles.tableCell}>
-                    <SsoBadge ssoMode={app.sso_mode} />
-                  </td>
-                  <td style={styles.actionsCell}>
-                    <button type="button" className="btn-secondary" onClick={() => openEdit(app)}>Edit</button>
-                    <button type="button" style={styles.deleteLinkBtn} onClick={() => setDeleteConfirm(app)}>Delete</button>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
 
         {deleteConfirm && (
           <AdminModal
@@ -1403,12 +1356,26 @@ export default function Admin() {
                     <label style={styles.policyLabel}>Bypass mode</label>
                   </div>
                   <div style={styles.policyInputCol}>
-                    <select value={loginMfaBypassMode} onChange={(e) => setLoginMfaBypassMode(e.target.value)} style={styles.policyInput}>
+                    <select value={loginMfaBypassMode} onChange={(e) => setLoginMfaBypassMode(e.target.value)} style={{ ...styles.policyInput, ...styles.policySelectWide }}>
                       <option value="rolling_24h">Rolling hours from last verification</option>
                       <option value="calendar_day">Same calendar day</option>
+                      <option value="rolling_days">Number of days from last MFA</option>
                     </select>
                   </div>
                 </div>
+                {loginMfaBypassMode === 'rolling_days' && (
+                  <div style={styles.policyRow}>
+                    <div style={styles.policyLabelCol}>
+                      <label style={styles.policyLabel}>Bypass window (days)</label>
+                    </div>
+                    <div style={styles.policyInputCol}>
+                      <input type="number" min={1} max={90} value={loginMfaBypassDays} onChange={(e) => setLoginMfaBypassDays(parseInt(e.target.value, 10) || 7)} style={styles.policyInput} />
+                      <p style={styles.policyHint}>
+                        The same browser skips MFA for this many days after the user last completed MFA. Signing in during that time does not extend it. Maximum 90 days.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {loginMfaBypassMode === 'rolling_24h' && (
                   <div style={styles.policyRow}>
                     <div style={styles.policyLabelCol}>
@@ -1428,7 +1395,7 @@ export default function Admin() {
                       <select
                         value={loginMfaBypassTimezone}
                         onChange={(e) => setLoginMfaBypassTimezone(e.target.value)}
-                        style={styles.policyInput}
+                        style={{ ...styles.policyInput, ...styles.policySelectWide }}
                       >
                         {loginMfaTimezoneOptions.map((tz) => (
                           <option key={tz.value} value={tz.value}>{tz.label}</option>
@@ -1467,77 +1434,6 @@ const styles = {
   error: { padding: 'var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
   success: { padding: 'var(--space-3)', background: '#DCFCE7', color: '#166534', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
   toolbar: { marginBottom: 'var(--space-4)', position: 'relative', zIndex: 1 },
-  appToolbar: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 'var(--space-3)',
-    marginBottom: 'var(--space-3)',
-    position: 'relative',
-    zIndex: 1,
-  },
-  appToolbarFilters: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 'var(--space-2)',
-    marginLeft: 'auto',
-  },
-  appSearchInput: {
-    width: 220,
-    minWidth: 160,
-    padding: 'var(--space-2) var(--space-3)',
-    border: '1px solid var(--color-border-medium)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-small)',
-  },
-  appResultCount: {
-    margin: '0 0 var(--space-3)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--color-text-steel)',
-  },
-  emptyState: {
-    background: 'var(--color-bg-white)',
-    border: '1px solid var(--color-border-light)',
-    borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-6) var(--space-4)',
-    textAlign: 'center',
-    boxShadow: 'var(--shadow-sm)',
-  },
-  emptyStateText: {
-    margin: '0 0 var(--space-4)',
-    fontSize: 'var(--text-small)',
-    color: 'var(--color-text-steel)',
-  },
-  emptyFilterText: {
-    margin: '0 0 var(--space-3)',
-    fontSize: 'var(--text-small)',
-    color: 'var(--color-text-steel)',
-  },
-  appCellInner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-3)',
-    minWidth: 0,
-  },
-  appName: {
-    fontWeight: 'var(--font-weight-medium)',
-    color: 'var(--color-text-charcoal)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  deleteLinkBtn: {
-    padding: 'var(--space-2) var(--space-3)',
-    background: 'none',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-small)',
-    color: 'var(--color-destructive)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-primary)',
-  },
   primaryBtn: {},
   form: { background: 'var(--color-bg-white)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', boxShadow: 'var(--shadow-md)' },
   formTitle: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
@@ -1550,7 +1446,6 @@ const styles = {
   tableHeader: { borderBottom: '1px solid var(--color-border-light)', padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 'var(--font-weight-medium)', fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)' },
   tableCell: { padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)' },
   actionsCell: { padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)', display: 'flex', flexDirection: 'row', gap: 'var(--space-1)', alignItems: 'center', flexWrap: 'nowrap' },
-  urlCell: { fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   section: { marginBottom: 'var(--space-6)' },
   sectionTitle: { margin: '0 0 var(--space-1)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   sectionDesc: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
@@ -1565,25 +1460,12 @@ const styles = {
   policyInputCol: { flex: 1, minWidth: 0 },
   policyLabel: { display: 'block', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-medium)', color: 'var(--color-text-charcoal)', paddingTop: 'var(--space-2)' },
   policyInput: { width: '100%', maxWidth: 120, padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)' },
+  policySelectWide: { maxWidth: 340 },
+  policyHint: { margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', maxWidth: 440 },
   helpText: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', maxWidth: 480 },
   subSection: { marginTop: 'var(--space-2)', marginBottom: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--color-border-light)' },
   subSectionTitle: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-base)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   textarea: { display: 'block', width: '100%', maxWidth: 520, padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)', border: '1px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)', resize: 'vertical', fontFamily: 'inherit' },
-  tableIconImg: { width: 36, height: 36, borderRadius: 8, objectFit: 'cover', display: 'block', flexShrink: 0 },
-  tableIconInitials: {
-    display: 'inline-flex',
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#A84335',
-    color: '#fff',
-    fontWeight: 700,
-    fontSize: 11,
-    fontFamily: 'var(--font-heading, system-ui, sans-serif)',
-    flexShrink: 0,
-  },
   moreMenu: {
     position: 'absolute',
     top: 'calc(100% + 4px)',
