@@ -25,6 +25,31 @@ function publicAppBase() {
   return (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
 }
 
+/**
+ * Issue a fresh one-time activation token (revoking any older ones) and email the link.
+ * Returns whether the email was actually handed to SMTP.
+ */
+async function sendActivationInvite(req, user) {
+  const rawToken = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
+  const expiresAt = new Date(Date.now() + ACTIVATION_TTL_HOURS * 60 * 60 * 1000);
+  await accountActivationDb.invalidatePendingForUser(pool, user.id);
+  await accountActivationDb.insert(pool, {
+    userId: user.id,
+    tokenHash,
+    expiresAt,
+    requestIp: getClientIp(req),
+  });
+  const activateUrl = `${publicAppBase()}/activate?token=${encodeURIComponent(rawToken)}`;
+  try {
+    const result = await mailer.sendAccountActivationEmail({ to: user.email, activateUrl, ttlHours: ACTIVATION_TTL_HOURS });
+    return { emailSent: !result.skipped, expiresAt };
+  } catch (mailErr) {
+    console.error('Activation email error:', mailErr.message);
+    return { emailSent: false, expiresAt };
+  }
+}
+
 const router = express.Router();
 
 /** Generate a high-entropy random password (20 chars, alphanumeric + safe symbols). */
@@ -265,27 +290,7 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
     }
 
     const user = await usersDb.createInvited(pool, { email: emailNorm, role: roleVal, business_unit_id: buId });
-
-    // Issue a one-time activation token and email the completion link.
-    const rawToken = crypto.randomBytes(32).toString('base64url');
-    const tokenHash = crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
-    const expiresAt = new Date(Date.now() + ACTIVATION_TTL_HOURS * 60 * 60 * 1000);
-    await accountActivationDb.invalidatePendingForUser(pool, user.id);
-    await accountActivationDb.insert(pool, {
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-      requestIp: getClientIp(req),
-    });
-    const activateUrl = `${publicAppBase()}/activate?token=${encodeURIComponent(rawToken)}`;
-    let emailSent = true;
-    try {
-      const result = await mailer.sendAccountActivationEmail({ to: emailNorm, activateUrl, ttlHours: ACTIVATION_TTL_HOURS });
-      emailSent = !result.skipped;
-    } catch (mailErr) {
-      emailSent = false;
-      console.error('Activation email error:', mailErr.message);
-    }
+    const { emailSent } = await sendActivationInvite(req, user);
 
     await auditLog(pool, {
       actorId: req.user.id,
@@ -306,6 +311,39 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
     if (err.code === '23505') return res.status(409).json({ error: 'Email already registered' });
     console.error('Create user error:', err);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// POST /api/users/:id/resend-activation — new invitation link for a pending user (Admin only).
+// Older links stop working as soon as the new one is issued.
+router.post('/:id/resend-activation', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const user = await usersDb.getById(pool, req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (user.is_active !== false) {
+      return res.status(400).json({ error: 'This account is already activated.' });
+    }
+    const { emailSent, expiresAt } = await sendActivationInvite(req, user);
+    await auditLog(pool, {
+      actorId: req.user.id,
+      actionType: 'ACTIVATION_RESENT',
+      targetEntity: `user:${user.email}`,
+      payloadBefore: null,
+      payloadAfter: { expires_at: expiresAt },
+      ipAddress: getClientIp(req),
+    });
+    res.json({
+      activation_email_sent: emailSent,
+      expires_at: expiresAt,
+      message: emailSent
+        ? `Activation email re-sent to ${user.email}. Earlier links no longer work.`
+        : 'A new activation link was created, but the email could not be sent. Check SMTP settings or server logs for the link.',
+    });
+  } catch (err) {
+    console.error('Resend activation error:', err);
+    res.status(500).json({ error: 'Failed to resend activation email' });
   }
 });
 

@@ -35,6 +35,39 @@ describe('deviceTrust', () => {
     test('returns false when last_verified_at missing', () => {
       expect(deviceTrust.isWithinBypassWindow({}, policyRolling, new Date())).toBe(false);
     });
+
+    describe('rolling_days', () => {
+      const policyDays = { login_mfa_bypass_mode: 'rolling_days', login_mfa_bypass_days: 7 };
+      const now = new Date('2026-08-20T10:00:00.000Z');
+      const daysAgo = (d) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
+
+      test('within N days of the last real MFA', () => {
+        const device = { last_mfa_at: daysAgo(3), last_verified_at: daysAgo(3) };
+        expect(deviceTrust.isWithinBypassWindow(device, policyDays, now)).toBe(true);
+      });
+
+      test('outside N days of the last real MFA', () => {
+        const device = { last_mfa_at: daysAgo(8), last_verified_at: daysAgo(8) };
+        expect(deviceTrust.isWithinBypassWindow(device, policyDays, now)).toBe(false);
+      });
+
+      test('a recent bypassed login does not extend the window', () => {
+        // last_verified_at is refreshed by every bypassed login; only last_mfa_at counts.
+        const device = { last_mfa_at: daysAgo(10), last_verified_at: daysAgo(0.05) };
+        expect(deviceTrust.isWithinBypassWindow(device, policyDays, now)).toBe(false);
+      });
+
+      test('requires MFA when the device has no last_mfa_at yet', () => {
+        const device = { last_verified_at: daysAgo(1) };
+        expect(deviceTrust.isWithinBypassWindow(device, policyDays, now)).toBe(false);
+      });
+
+      test('caps the window at MAX_BYPASS_DAYS', () => {
+        const policyHuge = { login_mfa_bypass_mode: 'rolling_days', login_mfa_bypass_days: 365 };
+        const device = { last_mfa_at: daysAgo(deviceTrust.MAX_BYPASS_DAYS + 1) };
+        expect(deviceTrust.isWithinBypassWindow(device, policyHuge, now)).toBe(false);
+      });
+    });
   });
 
   describe('deviceHashFromToken', () => {

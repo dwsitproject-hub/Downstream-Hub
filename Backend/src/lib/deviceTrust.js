@@ -90,17 +90,34 @@ function calendarDateInTimezone(date, timeZone) {
   return date.toISOString().slice(0, 10);
 }
 
+const MAX_BYPASS_DAYS = 90;
+
 /**
- * @param {{ last_verified_at: Date|string|null }} trustedDevice
- * @param {{ login_mfa_bypass_mode?: string, login_mfa_bypass_hours?: number, login_mfa_bypass_timezone?: string }} policy
+ * Modes:
+ *  - rolling_24h  : N hours since last_verified_at (refreshed by every bypassed login, so it slides)
+ *  - calendar_day : same calendar day (in the policy timezone) as last_verified_at
+ *  - rolling_days : N days since last_mfa_at, the last *real* MFA — fixed, not refreshed by bypasses
+ *
+ * @param {{ last_verified_at: Date|string|null, last_mfa_at?: Date|string|null }} trustedDevice
+ * @param {{ login_mfa_bypass_mode?: string, login_mfa_bypass_hours?: number, login_mfa_bypass_days?: number, login_mfa_bypass_timezone?: string }} policy
  * @param {Date} [now]
  */
 function isWithinBypassWindow(trustedDevice, policy, now = new Date()) {
+  const mode = policy?.login_mfa_bypass_mode || 'rolling_24h';
+
+  if (mode === 'rolling_days') {
+    // Devices trusted before last_mfa_at existed have no anchor: require MFA once.
+    if (!trustedDevice?.last_mfa_at) return false;
+    const mfaAt = new Date(trustedDevice.last_mfa_at);
+    if (Number.isNaN(mfaAt.getTime())) return false;
+    const days = Math.max(1, Math.min(MAX_BYPASS_DAYS, parseInt(String(policy?.login_mfa_bypass_days ?? 7), 10) || 7));
+    return now.getTime() - mfaAt.getTime() <= days * 24 * 60 * 60 * 1000;
+  }
+
   if (!trustedDevice?.last_verified_at) return false;
   const verifiedAt = new Date(trustedDevice.last_verified_at);
   if (Number.isNaN(verifiedAt.getTime())) return false;
 
-  const mode = policy?.login_mfa_bypass_mode || 'rolling_24h';
   if (mode === 'calendar_day') {
     const tz = policy?.login_mfa_bypass_timezone || 'UTC';
     return calendarDateInTimezone(verifiedAt, tz) === calendarDateInTimezone(now, tz);
@@ -123,6 +140,7 @@ function canBypassMfa(trustedDevice, policy) {
 module.exports = {
   DEVICE_COOKIE,
   DEVICE_TTL_MS,
+  MAX_BYPASS_DAYS,
   sha256,
   readDeviceToken,
   deviceHashFromToken,

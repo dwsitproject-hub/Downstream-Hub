@@ -21,7 +21,7 @@ async function listWithBu(db) {
 
 async function getById(db, id) {
   const { rows } = await db.query(
-    'SELECT id, email, role, business_unit_id, password_changed_at, failed_login_attempts, locked_until, token_version, oidc_sub, oidc_linked_at, oidc_linked_by_mode, hub_oidc_email_verified_at FROM users WHERE id = $1 AND deleted_at IS NULL',
+    'SELECT id, email, role, business_unit_id, password_changed_at, failed_login_attempts, locked_until, token_version, oidc_sub, oidc_linked_at, oidc_linked_by_mode, hub_oidc_email_verified_at, is_active FROM users WHERE id = $1 AND deleted_at IS NULL',
     [id]
   );
   return rows[0] || null;

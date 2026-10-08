@@ -7,11 +7,12 @@ function sha256(value) {
 async function upsertTrustedDevice(db, { userId, deviceHash, ipAddress, expiresAt, lastVerifiedAt }) {
   const verifiedAt = lastVerifiedAt || new Date();
   const { rows } = await db.query(
-    `INSERT INTO trusted_devices (user_id, device_hash, first_ip, last_ip, expires_at, last_verified_at)
-     VALUES ($1, $2, $3, $3, $4, $5)
+    `INSERT INTO trusted_devices (user_id, device_hash, first_ip, last_ip, expires_at, last_verified_at, last_mfa_at)
+     VALUES ($1, $2, $3, $3, $4, $5, $5)
      ON CONFLICT (user_id, device_hash) WHERE revoked_at IS NULL
      DO UPDATE SET last_ip = EXCLUDED.last_ip, last_seen_at = now(), expires_at = EXCLUDED.expires_at,
-                   last_verified_at = EXCLUDED.last_verified_at
+                   last_verified_at = EXCLUDED.last_verified_at,
+                   last_mfa_at = EXCLUDED.last_mfa_at
      RETURNING *`,
     [userId, deviceHash, ipAddress || null, expiresAt, verifiedAt]
   );

@@ -3,6 +3,9 @@
  * New columns have defaults for backward compatibility.
  */
 const { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } = require('../lib/passwordValidation');
+const { MAX_BYPASS_DAYS } = require('../lib/deviceTrust');
+
+const BYPASS_MODES = ['rolling_24h', 'calendar_day', 'rolling_days'];
 
 const DEFAULTS = {
   password_expiry_days: 0,
@@ -18,6 +21,7 @@ const DEFAULTS = {
   mfa_risk_threshold: 50,
   login_mfa_bypass_mode: 'rolling_24h',
   login_mfa_bypass_hours: 24,
+  login_mfa_bypass_days: 7,
   login_mfa_bypass_timezone: 'UTC',
 };
 
@@ -26,7 +30,7 @@ async function get(db) {
     `SELECT password_expiry_days, min_password_length, require_uppercase, require_lowercase,
             require_number, require_symbol, password_history_count, max_login_attempts, lockout_duration_mins,
             mfa_reverify_days, mfa_risk_threshold,
-            login_mfa_bypass_mode, login_mfa_bypass_hours, login_mfa_bypass_timezone
+            login_mfa_bypass_mode, login_mfa_bypass_hours, login_mfa_bypass_days, login_mfa_bypass_timezone
      FROM password_policy WHERE id = 1`
   );
   const row = rows[0];
@@ -45,6 +49,7 @@ async function get(db) {
     mfa_risk_threshold: row.mfa_risk_threshold ?? DEFAULTS.mfa_risk_threshold,
     login_mfa_bypass_mode: row.login_mfa_bypass_mode ?? DEFAULTS.login_mfa_bypass_mode,
     login_mfa_bypass_hours: row.login_mfa_bypass_hours ?? DEFAULTS.login_mfa_bypass_hours,
+    login_mfa_bypass_days: row.login_mfa_bypass_days ?? DEFAULTS.login_mfa_bypass_days,
     login_mfa_bypass_timezone: row.login_mfa_bypass_timezone ?? DEFAULTS.login_mfa_bypass_timezone,
   };
 }
@@ -110,13 +115,18 @@ async function update(db, payload) {
   }
   if (payload.login_mfa_bypass_mode !== undefined) {
     const mode = String(payload.login_mfa_bypass_mode).trim();
-    const allowed = mode === 'calendar_day' ? 'calendar_day' : 'rolling_24h';
+    const allowed = BYPASS_MODES.includes(mode) ? mode : 'rolling_24h';
     updates.push(`login_mfa_bypass_mode = $${idx++}`);
     values.push(allowed);
   }
   if (payload.login_mfa_bypass_hours !== undefined) {
     const v = Math.max(1, Math.min(168, parseInt(String(payload.login_mfa_bypass_hours), 10) || 24));
     updates.push(`login_mfa_bypass_hours = $${idx++}`);
+    values.push(v);
+  }
+  if (payload.login_mfa_bypass_days !== undefined) {
+    const v = Math.max(1, Math.min(MAX_BYPASS_DAYS, parseInt(String(payload.login_mfa_bypass_days), 10) || 7));
+    updates.push(`login_mfa_bypass_days = $${idx++}`);
     values.push(v);
   }
   if (payload.login_mfa_bypass_timezone !== undefined) {
@@ -134,4 +144,4 @@ async function update(db, payload) {
   return get(db);
 }
 
-module.exports = { get, update };
+module.exports = { get, update, BYPASS_MODES };
