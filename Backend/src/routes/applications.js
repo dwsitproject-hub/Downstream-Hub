@@ -11,6 +11,8 @@ const { pool } = require('../db/pool');
 const applicationsDb = require('../db/applicationsDb');
 const businessUnitsDb = require('../db/businessUnitsDb');
 const usersDb = require('../db/usersDb');
+const sdkDb = require('../db/sdkDb');
+const sdkPolicy = require('../lib/sdkPolicy');
 const { authMiddleware, requireAdmin } = require('../middleware/auth');
 const { auditLog, getClientIp } = require('../middleware/audit');
 
@@ -205,6 +207,106 @@ router.get('/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Get application error:', err);
     res.status(500).json({ error: 'Failed to get application' });
+  }
+});
+
+/* ---------- Embeddable SDK settings (Admin only) ---------- */
+
+const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_SDK_ORIGINS = 20;
+
+function sdkSettingsDto(row, status) {
+  return {
+    application_id: row.id,
+    application_name: row.name,
+    sdk_key: row.sdk_key,
+    sdk_enabled: row.sdk_enabled,
+    allowed_origins: row.sdk_allowed_origins || [],
+    default_origins: sdkPolicy.defaultAllowedOrigins(row),
+    effective_origins: sdkPolicy.effectiveAllowedOrigins(row),
+    status,
+  };
+}
+
+// GET /api/applications/:id/sdk — key (created on first view), origins, ingestion status
+router.get('/:id/sdk', authMiddleware, requireAdmin, async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(404).json({ error: 'Application not found' });
+  try {
+    let row = await sdkDb.getSettings(pool, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Application not found' });
+    if (!row.sdk_key) {
+      await sdkDb.ensureKey(pool, row.id);
+      row = await sdkDb.getSettings(pool, row.id);
+    }
+    const status = await sdkDb.ingestionStatus(pool, row.id);
+    res.json(sdkSettingsDto(row, status));
+  } catch (err) {
+    console.error('Get SDK settings error:', err);
+    res.status(500).json({ error: 'Failed to load SDK settings' });
+  }
+});
+
+// PUT /api/applications/:id/sdk — { enabled?: boolean, allowed_origins?: string[] }
+router.put('/:id/sdk', authMiddleware, requireAdmin, async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(404).json({ error: 'Application not found' });
+  const body = req.body || {};
+  let allowedOrigins;
+  if (body.allowed_origins !== undefined) {
+    if (!Array.isArray(body.allowed_origins)) return res.status(400).json({ error: 'allowed_origins must be a list' });
+    const raw = body.allowed_origins.map((s) => String(s || '').trim()).filter(Boolean);
+    const invalid = raw.filter((s) => !sdkPolicy.normalizeOrigin(s));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `Not a valid http(s) origin: ${invalid.slice(0, 3).join(', ')}` });
+    }
+    allowedOrigins = [...new Set(raw.map(sdkPolicy.normalizeOrigin))];
+    if (allowedOrigins.length > MAX_SDK_ORIGINS) {
+      return res.status(400).json({ error: `At most ${MAX_SDK_ORIGINS} origins are allowed` });
+    }
+  }
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be true or false' });
+  }
+  try {
+    const before = await sdkDb.getSettings(pool, req.params.id);
+    if (!before) return res.status(404).json({ error: 'Application not found' });
+    const after = await sdkDb.updateSettings(pool, req.params.id, { enabled: body.enabled, allowedOrigins });
+    await auditLog(pool, {
+      actorId: req.user.id,
+      actionType: 'SDK_SETTINGS_UPDATE',
+      targetEntity: `application:${before.name}`,
+      payloadBefore: { sdk_enabled: before.sdk_enabled, sdk_allowed_origins: before.sdk_allowed_origins },
+      payloadAfter: { sdk_enabled: after.sdk_enabled, sdk_allowed_origins: after.sdk_allowed_origins },
+      ipAddress: getClientIp(req),
+    });
+    const status = await sdkDb.ingestionStatus(pool, after.id);
+    res.json(sdkSettingsDto(after, status));
+  } catch (err) {
+    console.error('Update SDK settings error:', err);
+    res.status(500).json({ error: 'Failed to update SDK settings' });
+  }
+});
+
+// POST /api/applications/:id/sdk/rotate-key — issue a new key; the old one stops working immediately
+router.post('/:id/sdk/rotate-key', authMiddleware, requireAdmin, async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(404).json({ error: 'Application not found' });
+  try {
+    const before = await sdkDb.getSettings(pool, req.params.id);
+    if (!before) return res.status(404).json({ error: 'Application not found' });
+    await sdkDb.rotateKey(pool, req.params.id);
+    await auditLog(pool, {
+      actorId: req.user.id,
+      actionType: 'SDK_KEY_ROTATE',
+      targetEntity: `application:${before.name}`,
+      payloadBefore: null,
+      payloadAfter: null,
+      ipAddress: getClientIp(req),
+    });
+    const row = await sdkDb.getSettings(pool, req.params.id);
+    const status = await sdkDb.ingestionStatus(pool, row.id);
+    res.json(sdkSettingsDto(row, status));
+  } catch (err) {
+    console.error('Rotate SDK key error:', err);
+    res.status(500).json({ error: 'Failed to rotate SDK key' });
   }
 });
 

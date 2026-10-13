@@ -14,6 +14,7 @@ const settingsRoutes = require('./routes/settings');
 const ssoRoutes = require('./routes/sso');
 const activityRoutes = require('./routes/activity');
 const analyticsRoutes = require('./routes/analytics');
+const sdkRoutes = require('./routes/sdk');
 
 const app = express();
 app.disable('x-powered-by');
@@ -21,6 +22,10 @@ app.disable('x-powered-by');
 if (process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
 }
+
+// Embeddable SDK: called from other applications' pages, so it sets its own per-app
+// CORS and resource-policy headers. Must be mounted before the global cors/helmet below.
+app.use('/api/sdk', sdkRoutes);
 
 const allowedOrigins = (process.env.CORS_ORIGINS || process.env.PUBLIC_APP_URL || '')
   .split(',')

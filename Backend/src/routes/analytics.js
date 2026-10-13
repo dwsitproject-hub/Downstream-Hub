@@ -37,7 +37,7 @@ router.get('/summary', async (req, res) => {
       analyticsDb.topApps(pool, days, 10),
       analyticsDb.activeUsers(pool, days, { limit: 10, orderBy: 'launches' }),
       analyticsDb.launchesByDay(pool, days),
-      bugReportsDb.counts(pool),
+      bugReportsDb.counts(pool, 'hub'),
     ]);
     res.json({ days, overview, topApps, topUsers, launchesByDay, bugCounts });
   } catch (err) {
@@ -125,12 +125,120 @@ router.get('/users/:id', async (req, res) => {
   }
 });
 
-// GET /api/analytics/bug-reports?status=open|resolved&kind=user_report|client_error
+/* ---------- per-application usage (embeddable SDK) ---------- */
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Optional "who" filter: ?user_id=<Hub user> or ?email=<reported email>. Null when malformed. */
+function visitorParams(req) {
+  const userId = optUuid(req.query.user_id);
+  if (userId === null) return null;
+  const email = req.query.email ? String(req.query.email).trim() : undefined;
+  if (email && (email.length > 255 || !EMAIL_RE.test(email))) return null;
+  return { userId, email: userId ? undefined : email };
+}
+
+// GET /api/analytics/overview?days=30 — every application plus the Hub itself
+router.get('/overview', async (req, res) => {
+  try {
+    const days = parseDays(req);
+    const [apps, hub, hubBugs] = await Promise.all([
+      analyticsDb.appsOverview(pool, days),
+      analyticsDb.overview(pool, days),
+      bugReportsDb.counts(pool, 'hub'),
+    ]);
+    res.json({ days, hub: { ...hub, open_bugs: hubBugs.open }, apps });
+  } catch (err) {
+    console.error('Analytics overview error:', err);
+    res.status(500).json({ error: 'Failed to load the applications overview' });
+  }
+});
+
+// GET /api/analytics/apps/:id/usage?days=30 — the per-application dashboard
+router.get('/apps/:id/usage', async (req, res) => {
+  const appId = optUuid(req.params.id);
+  if (!appId) return badRequest(res, 'Invalid application id');
+  try {
+    const days = parseDays(req);
+    const app = await analyticsDb.appInfo(pool, appId);
+    if (!app) return res.status(404).json({ error: 'Application not found' });
+    const usage = await analyticsDb.appUsage(pool, appId, days);
+    res.json({ days, app, ...usage });
+  } catch (err) {
+    console.error('App usage error:', err);
+    res.status(500).json({ error: 'Failed to load application usage' });
+  }
+});
+
+// GET /api/analytics/apps/:id/usage/sessions?days=&user_id=|email=&sort=recent|longest
+router.get('/apps/:id/usage/sessions', async (req, res) => {
+  const appId = optUuid(req.params.id);
+  const who = visitorParams(req);
+  if (!appId) return badRequest(res, 'Invalid application id');
+  if (!who) return badRequest(res, 'Invalid user filter');
+  try {
+    res.json(await analyticsDb.appSessions(pool, appId, parseDays(req), {
+      ...who,
+      sort: req.query.sort === 'longest' ? 'longest' : 'recent',
+    }));
+  } catch (err) {
+    console.error('App sessions error:', err);
+    res.status(500).json({ error: 'Failed to load sessions' });
+  }
+});
+
+// GET /api/analytics/apps/:id/usage/pages?days=&path=&day=YYYY-MM-DD&user_id=|email=
+router.get('/apps/:id/usage/pages', async (req, res) => {
+  const appId = optUuid(req.params.id);
+  const who = visitorParams(req);
+  if (!appId) return badRequest(res, 'Invalid application id');
+  if (!who) return badRequest(res, 'Invalid user filter');
+  const day = req.query.day ? String(req.query.day) : undefined;
+  if (day && !DAY_RE.test(day)) return badRequest(res, 'day must be YYYY-MM-DD');
+  const path = req.query.path ? String(req.query.path).slice(0, 500) : undefined;
+  try {
+    res.json(await analyticsDb.appPageViews(pool, appId, parseDays(req), { ...who, path, day }));
+  } catch (err) {
+    console.error('App page views error:', err);
+    res.status(500).json({ error: 'Failed to load page views' });
+  }
+});
+
+// GET /api/analytics/apps/:id/usage/users?days=
+router.get('/apps/:id/usage/users', async (req, res) => {
+  const appId = optUuid(req.params.id);
+  if (!appId) return badRequest(res, 'Invalid application id');
+  try {
+    res.json(await analyticsDb.appUsersUsage(pool, appId, parseDays(req)));
+  } catch (err) {
+    console.error('App users error:', err);
+    res.status(500).json({ error: 'Failed to load application users' });
+  }
+});
+
+// GET /api/analytics/apps/:id/usage/user?days=&user_id=|email= — one user inside one app
+router.get('/apps/:id/usage/user', async (req, res) => {
+  const appId = optUuid(req.params.id);
+  const who = visitorParams(req);
+  if (!appId) return badRequest(res, 'Invalid application id');
+  if (!who || (!who.userId && !who.email)) return badRequest(res, 'user_id or email is required');
+  try {
+    const result = await analyticsDb.appUserUsage(pool, appId, parseDays(req), who);
+    if (!result) return badRequest(res, 'user_id or email is required');
+    res.json(result);
+  } catch (err) {
+    console.error('App user usage error:', err);
+    res.status(500).json({ error: 'Failed to load user activity' });
+  }
+});
+
+// GET /api/analytics/bug-reports?status=open|resolved&kind=user_report|client_error&scope=hub|<app id>
 router.get('/bug-reports', async (req, res) => {
   try {
     const reports = await bugReportsDb.list(pool, {
       status: req.query.status,
       kind: req.query.kind,
+      scope: req.query.scope, // 'hub' | <application id> | omitted = all
       limit: parseInt(req.query.limit, 10) || 100,
     });
     res.json({ reports });
