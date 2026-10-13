@@ -16,6 +16,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { pool } = require('../db/pool');
 const sdkDb = require('../db/sdkDb');
+const sentinel = require('../lib/sentinel');
 const p = require('../lib/sdkPolicy');
 const { getClientIp } = require('../middleware/audit');
 
@@ -109,7 +110,13 @@ function cleanEvents(raw, origin) {
       if (message) {
         errors += 1;
         const pagePath = p.sanitizePath(e.path);
-        out.push({ type: 'error', message, stack: p.sanitizeText(e.stack, 8000), path: pagePath ? origin + pagePath : null });
+        out.push({
+          type: 'error',
+          message,
+          stack: p.sanitizeText(e.stack, 8000),
+          path: pagePath ? origin + pagePath : null,
+          breadcrumbs: p.sanitizeBreadcrumbs(e.breadcrumbs),
+        });
       }
     }
   });
@@ -151,16 +158,21 @@ router.post('/v1/collect', parseText, parsePayload, limiter(240), authorize, asy
     const events = cleanEvents(req.sdkPayload.events, req.sdkOrigin);
     if (events.length === 0) return res.status(204).end();
     const user = await sdkDb.resolveUser(pool, p.sanitizeIdentity(req.sdkPayload.user));
-    await sdkDb.recordBatch(pool, {
+    const reports = await sdkDb.recordBatch(pool, {
       app: req.sdkApp,
       sessionKey,
       anonymousId,
       user,
       userAgent: p.sanitizeText(req.headers['user-agent'], 500),
       ip: getClientIp(req),
+      release: p.sanitizeRelease(req.sdkPayload.release),
       events,
     });
-    return res.status(204).end();
+    res.status(204).end();
+    let queued = false;
+    for (const report of reports) queued = Boolean(await sentinel.onBugReport(pool, report)) || queued;
+    if (queued) sentinel.nudge(pool);
+    return undefined;
   } catch (err) {
     console.error('SDK collect error:', err);
     return res.status(500).json({ error: 'server_error' });
@@ -185,8 +197,12 @@ router.post('/v1/bug-report', parseText, parsePayload, limiter(10), authorize, a
       message,
       stack: null,
       pageUrl: pagePath ? req.sdkOrigin + pagePath : null,
+      release: p.sanitizeRelease(req.sdkPayload.release),
+      breadcrumbs: p.sanitizeBreadcrumbs(req.sdkPayload.breadcrumbs),
     });
-    return res.status(201).json({ id: report.id, message: 'Thanks — your report has been sent.' });
+    res.status(201).json({ id: report.id, message: 'Thanks — your report has been sent.' });
+    if (await sentinel.onBugReport(pool, report)) sentinel.nudge(pool);
+    return undefined;
   } catch (err) {
     console.error('SDK bug report error:', err);
     return res.status(500).json({ error: 'server_error' });

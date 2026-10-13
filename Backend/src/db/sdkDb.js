@@ -3,6 +3,7 @@
  * resolution, session/event ingestion, and the per-application SDK settings.
  */
 const { generateSdkKey } = require('../lib/sdkPolicy');
+const { fingerprint } = require('../lib/sentinel/fingerprint');
 
 const APP_CACHE_MS = 60 * 1000;
 const USER_CACHE_MS = 5 * 60 * 1000;
@@ -65,9 +66,10 @@ async function resolveUser(db, { id, email }) {
 /**
  * Store one SDK batch. events: already-sanitised
  *   { type: 'page_view', path, title } | { type: 'custom', name, path, properties }
- *   | { type: 'heartbeat' } | { type: 'error', message, stack, path }
+ *   | { type: 'heartbeat' } | { type: 'error', message, stack, path, breadcrumbs }
+ * Returns the bug reports created for errors (Sentinel picks them up).
  */
-async function recordBatch(db, { app, sessionKey, anonymousId, user, userAgent, ip, events }) {
+async function recordBatch(db, { app, sessionKey, anonymousId, user, userAgent, ip, release, events }) {
   const pageViews = events.filter((e) => e.type === 'page_view');
   await db.query(
     `INSERT INTO app_sessions (application_id, session_key, user_id, user_email, anonymous_id, page_views, user_agent, ip_address)
@@ -108,21 +110,27 @@ async function recordBatch(db, { app, sessionKey, anonymousId, user, userAgent, 
     );
   }
 
+  const reports = [];
   const errors = events.filter((e) => e.type === 'error');
   for (const e of errors) {
-    await insertBugReport(db, {
-      app, sessionKey, user, userAgent, ip,
-      kind: 'client_error', message: e.message, stack: e.stack, pageUrl: e.path,
-    });
+    reports.push(await insertBugReport(db, {
+      app, sessionKey, user, userAgent, ip, release,
+      kind: 'client_error', message: e.message, stack: e.stack, pageUrl: e.path, breadcrumbs: e.breadcrumbs,
+    }));
   }
+  return reports;
 }
 
-async function insertBugReport(db, { app, sessionKey, user, userAgent, ip, kind, message, stack, pageUrl }) {
+async function insertBugReport(db, { app, sessionKey, user, userAgent, ip, kind, message, stack, pageUrl, release, breadcrumbs }) {
+  const fp = fingerprint({ scope: app.id, kind, message, stack });
+  const context = breadcrumbs && breadcrumbs.length ? JSON.stringify({ breadcrumbs }) : null;
   const { rows } = await db.query(
-    `INSERT INTO bug_reports (application_id, session_key, user_id, user_email, kind, message, page_url, stack, user_agent, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     RETURNING id, kind, status, created_at`,
-    [app.id, sessionKey, user.userId, user.email, kind, message, pageUrl || null, stack || null, userAgent, ip]
+    `INSERT INTO bug_reports (application_id, session_key, user_id, user_email, kind, message, page_url, stack,
+                              user_agent, ip_address, fingerprint, release, context)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING id, kind, status, created_at, application_id, fingerprint`,
+    [app.id, sessionKey, user.userId, user.email, kind, message, pageUrl || null, stack || null, userAgent, ip,
+      fp, release || null, context]
   );
   return rows[0];
 }

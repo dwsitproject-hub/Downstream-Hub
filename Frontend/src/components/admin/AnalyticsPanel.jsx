@@ -3,6 +3,7 @@ import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { apiRequest } from '../../api';
 import { resolveIconSrc } from '../../utils/resolveIconSrc';
 import { applicationInitials } from '../../utils/applicationInitials';
+import { Breadcrumbs, SentinelBugAnalysis, SentinelCard, SentinelPill } from './Sentinel';
 
 const PERIODS = [7, 30, 90];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -688,6 +689,8 @@ function DetailModal({ stack, days, onNavigate, onBack, onClose, onBugChanged })
             <pre style={s.pre}>{r.stack}</pre>
           </>
         )}
+        <Breadcrumbs context={r.context} release={r.release} />
+        <SentinelBugAnalysis report={r} />
         <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end' }}>
           <button type="button" className={r.status === 'resolved' ? 'btn-secondary' : 'btn-primary'} disabled={busy} onClick={() => toggleBug(r)}>
             {busy ? 'Saving…' : r.status === 'resolved' ? 'Reopen report' : 'Mark as resolved'}
@@ -797,6 +800,7 @@ function BugSection({ scope, reloadKey, onOpen, onChanged, focusSignal, onSelect
             <th style={{ ...s.th, width: 100 }}>Type</th>
             {showApp && <th style={s.th}>Application</th>}
             <th style={s.th}>Message</th><th style={s.th}>Reporter</th>
+            <th style={{ ...s.th, width: 120 }}>Sentinel</th>
             <th style={{ ...s.th, width: 110 }}>When</th><th style={{ ...s.th, width: 110 }} />
           </tr></thead>
           <tbody>
@@ -812,13 +816,16 @@ function BugSection({ scope, reloadKey, onOpen, onChanged, focusSignal, onSelect
                 )}
                 <td style={s.td}>
                   <div style={s.clamp}>{b.message}</div>
-                  {b.page_url && <div style={s.subtle}>{b.page_url}</div>}
+                  {b.sentinel_status === 'done' && b.sentinel_summary
+                    ? <div style={{ ...s.subtle, color: '#3730A3' }}>Sentinel: {b.sentinel_summary}</div>
+                    : b.page_url && <div style={s.subtle}>{b.page_url}</div>}
                 </td>
                 <td style={s.td}>
                   {b.user_id
                     ? <Link onClick={() => onOpen({ type: 'user', userId: b.user_id, email: b.reporter_email })}>{b.reporter_email}</Link>
                     : (b.reporter_email || <span style={s.muted}>Anonymous</span>)}
                 </td>
+                <td style={s.td}><SentinelPill status={b.sentinel_status} severity={b.sentinel_severity} summary={b.sentinel_summary} /></td>
                 <td style={s.td} title={fmtDateTime(b.created_at)}>{fmtRelative(b.created_at)}</td>
                 <td style={s.tdR}>
                   <button
@@ -1003,6 +1010,7 @@ function HubView({ days, reloadKey, open, onLoaded, onBugsChanged, onSelectScope
   return (
     <>
       <KpiGrid items={kpis} />
+      <SentinelCard scope="hub" scopeName="Downstream Hub" days={days} />
       <DayChart
         title="App opens per day"
         rows={summary.launchesByDay}
@@ -1128,6 +1136,8 @@ function AppView({ appId, days, reloadKey, open, onLoaded, onBugsChanged, onSele
       )}
 
       <KpiGrid items={kpis} />
+
+      <SentinelCard scope={app.id} scopeName={app.name} days={days} />
 
       <DayChart
         title="Page views per day"

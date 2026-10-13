@@ -8,6 +8,9 @@
  *
  * Collects: page views (path only — query strings are never sent), time in app,
  * uncaught JS errors, and user bug reports from a floating "Report a bug" button.
+ * Errors and reports carry breadcrumbs — the last few navigations, API calls (method,
+ * path and status only), console errors and tracked actions — so Sentinel, the Hub's
+ * support agent, can see what led up to the problem.
  */
 (function (window, document) {
   'use strict';
@@ -15,12 +18,13 @@
   var existing = window.DwsHub;
   if (existing && existing.__loaded) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var HEARTBEAT_MS = 30 * 1000;
   var FLUSH_MS = 5 * 1000;
   var MAX_QUEUE = 100;
   var SESSION_IDLE_MS = 30 * 60 * 1000;
   var MAX_ERRORS_PER_PAGE = 20;
+  var MAX_BREADCRUMBS = 30;
 
   var scriptEl = document.currentScript || (function () {
     var all = document.querySelectorAll('script[src*="hub-sdk"]');
@@ -34,6 +38,8 @@
     bugButtonPosition: 'bottom-right',
     autoPageViews: true,
     captureErrors: true,
+    breadcrumbs: true,
+    release: null,
     debug: false,
   };
   var state = {
@@ -47,6 +53,7 @@
     flushTimer: null,
     heartbeatTimer: null,
     widget: null,
+    crumbs: [],
   };
 
   /* ---------- small utilities ---------- */
@@ -141,6 +148,7 @@
       sdk: VERSION,
       session: { id: session(), anonymousId: anonymousId() },
       user: state.user,
+      release: cfg.release || undefined,
     };
   }
 
@@ -164,12 +172,102 @@
     });
   }
 
+  /* ---------- breadcrumbs: what happened just before an error or report ---------- */
+
+  function crumb(c) {
+    if (!cfg.breadcrumbs) return;
+    c.t = Date.now();
+    state.crumbs.push(c);
+    if (state.crumbs.length > MAX_BREADCRUMBS) state.crumbs.splice(0, state.crumbs.length - MAX_BREADCRUMBS);
+  }
+
+  function isOwnRequest(url) {
+    return !!cfg.endpoint && String(url).indexOf(cfg.endpoint) === 0;
+  }
+
+  /** Method, path and status only: never the query string, headers or bodies. */
+  function httpCrumb(method, url, status, start) {
+    crumb({
+      type: 'http',
+      method: String(method || 'GET').toUpperCase(),
+      url: String(url).split('#')[0].split('?')[0].slice(0, 300),
+      status: status || 0,
+      ms: Date.now() - start,
+    });
+  }
+
+  function watchNetwork() {
+    if (window.fetch && !window.fetch.__dwshub) {
+      var originalFetch = window.fetch;
+      var wrappedFetch = function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+        var method = (init && init.method) || (input && input.method) || 'GET';
+        var start = Date.now();
+        var request = originalFetch.apply(window, arguments);
+        if (isOwnRequest(url)) return request;
+        return request.then(function (res) {
+          httpCrumb(method, url, res && res.status, start);
+          return res;
+        }, function (err) {
+          httpCrumb(method, url, 0, start);
+          throw err;
+        });
+      };
+      wrappedFetch.__dwshub = true;
+      window.fetch = wrappedFetch;
+    }
+    var XHR = window.XMLHttpRequest;
+    if (XHR && XHR.prototype && !XHR.prototype.__dwshub) {
+      var open = XHR.prototype.open;
+      var send = XHR.prototype.send;
+      XHR.prototype.open = function (method, url) {
+        this.__dwshubReq = { method: method, url: String(url) };
+        return open.apply(this, arguments);
+      };
+      XHR.prototype.send = function () {
+        var xhr = this;
+        var req = xhr.__dwshubReq;
+        if (req && !isOwnRequest(req.url)) {
+          var start = Date.now();
+          xhr.addEventListener('loadend', function () { httpCrumb(req.method, req.url, xhr.status, start); });
+        }
+        return send.apply(this, arguments);
+      };
+      XHR.prototype.__dwshub = true;
+    }
+  }
+
+  function argText(a) {
+    if (typeof a === 'string') return a;
+    if (a instanceof Error) return a.message;
+    try { return JSON.stringify(a).slice(0, 200); } catch (e) { return String(a); }
+  }
+
+  function watchConsole() {
+    var c = window.console;
+    if (!c || typeof c.error !== 'function' || c.error.__dwshub) return;
+    var originalError = c.error;
+    var wrappedError = function () {
+      try {
+        crumb({ type: 'console', message: [].slice.call(arguments).map(argText).join(' ').slice(0, 300) });
+      } catch (e) { /* never break the host's logging */ }
+      return originalError.apply(c, arguments);
+    };
+    wrappedError.__dwshub = true;
+    c.error = wrappedError;
+  }
+
+  function breadcrumbs() {
+    return cfg.breadcrumbs && state.crumbs.length ? state.crumbs.slice() : undefined;
+  }
+
   /* ---------- automatic collection ---------- */
 
   function pageView(path) {
     var p = path || currentPath();
     if (p === state.lastPath) return;
     state.lastPath = p;
+    crumb({ type: 'nav', path: p });
     enqueue({ type: 'page_view', path: p, title: (document.title || '').slice(0, 200) });
   }
 
@@ -198,7 +296,7 @@
     state.lastError = msg;
     state.lastErrorAt = now;
     state.errorCount += 1;
-    enqueue({ type: 'error', message: msg, stack: stack ? String(stack).slice(0, 8000) : undefined, path: currentPath() }, true);
+    enqueue({ type: 'error', message: msg, stack: stack ? String(stack).slice(0, 8000) : undefined, path: currentPath(), breadcrumbs: breadcrumbs() }, true);
   }
 
   function watchErrors() {
@@ -311,6 +409,7 @@
       var payload = basePayload();
       payload.message = text;
       payload.path = currentPath();
+      payload.breadcrumbs = breadcrumbs();
       post('/bug-report', payload).then(function (res) {
         if (!res.ok) throw new Error('status ' + res.status);
         msg.className = 'msg ok';
@@ -354,12 +453,15 @@
     cfg.bugButtonPosition = options.bugButtonPosition || cfg.bugButtonPosition;
     cfg.autoPageViews = bool(options.autoPageViews, cfg.autoPageViews);
     cfg.captureErrors = bool(options.captureErrors, cfg.captureErrors);
+    cfg.breadcrumbs = bool(options.breadcrumbs, cfg.breadcrumbs);
+    cfg.release = options.release ? String(options.release).slice(0, 64) : null;
     cfg.debug = bool(options.debug, false);
 
     state.user = state.user || store('dwshub.u.' + cfg.appKey) || null;
     state.started = true;
     log('started', VERSION, cfg.endpoint);
 
+    if (cfg.breadcrumbs) { watchNetwork(); watchConsole(); }
     if (cfg.captureErrors) watchErrors();
     if (cfg.autoPageViews) { watchNavigation(); pageView(); }
     watchVisibility();
@@ -389,12 +491,14 @@
     reset: function () {
       flush(true);
       state.user = null;
+      state.crumbs = []; // the next person's reports must not carry this person's activity
       if (cfg.appKey) store('dwshub.u.' + cfg.appKey, null);
       rotateSession();
       return api;
     },
     track: function (name, properties) {
       if (!name) return api;
+      crumb({ type: 'action', name: String(name).slice(0, 80) });
       enqueue({ type: 'custom', name: String(name).slice(0, 80), path: currentPath(), properties: properties || undefined });
       return api;
     },
@@ -422,6 +526,8 @@
       bugButtonPosition: scriptEl.getAttribute('data-bug-button-position') || undefined,
       autoPageViews: scriptEl.getAttribute('data-auto-page-views'),
       captureErrors: scriptEl.getAttribute('data-capture-errors'),
+      breadcrumbs: scriptEl.getAttribute('data-breadcrumbs'),
+      release: scriptEl.getAttribute('data-release') || undefined,
       debug: scriptEl.getAttribute('data-debug'),
     });
   }

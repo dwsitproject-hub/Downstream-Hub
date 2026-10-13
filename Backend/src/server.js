@@ -8,6 +8,8 @@ const path = require('path');
 const { loadSecrets } = require('./config/loadSecrets');
 const app = require('./app');
 const { runMigrations } = require('./db/migrate');
+const { pool } = require('./db/pool');
+const sentinel = require('./lib/sentinel');
 const PORT = process.env.PORT || 4000;
 
 function ensureUploadDirs() {
@@ -35,6 +37,9 @@ async function start() {
   }
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Downstream Hub API listening on port ${PORT}`);
+    if (process.env.DATABASE_URL) {
+      sentinel.startWorker(pool).catch((err) => console.error('Sentinel failed to start:', err.message));
+    }
   });
 }
 

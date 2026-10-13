@@ -3,6 +3,7 @@
  * and sanitising what browsers send us. No I/O — unit tested.
  */
 const crypto = require('crypto');
+const { scrubSecrets } = require('./sentinel/privacy');
 
 const SDK_KEY_PREFIX = 'dwsk_';
 const SDK_KEY_RE = /^dwsk_[A-Za-z0-9_-]{20,60}$/;
@@ -112,6 +113,64 @@ function sanitizeText(value, max) {
   return s ? s.slice(0, max) : null;
 }
 
+const RELEASE_RE = /^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$/;
+const MAX_BREADCRUMBS = 30;
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+/** App build/version the SDK reports (git sha, tag or semver), e.g. "1.4.2" or "3fa9c1d". */
+function sanitizeRelease(value) {
+  if (typeof value !== 'string') return null;
+  const s = value.trim();
+  return RELEASE_RE.test(s) ? s : null;
+}
+
+/** URL of an API call: origin + path for absolute URLs, path for relative ones; never the query. */
+function sanitizeRequestUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const s = value.trim();
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      return (u.origin + u.pathname).slice(0, 300);
+    } catch {
+      return null;
+    }
+  }
+  const p = sanitizePath(s.split('#')[0]);
+  return p ? p.slice(0, 300) : null;
+}
+
+/**
+ * What happened just before an error or report: navigations, failed API calls,
+ * console errors and tracked actions. Unknown shapes are dropped.
+ */
+function sanitizeBreadcrumbs(value) {
+  if (!Array.isArray(value)) return null;
+  const out = [];
+  for (const c of value.slice(-MAX_BREADCRUMBS)) {
+    if (!c || typeof c !== 'object') continue;
+    const t = Number.isFinite(c.t) && c.t > 0 ? Math.round(c.t) : null;
+    if (c.type === 'nav') {
+      const path = sanitizePath(c.path);
+      if (path) out.push({ t, type: 'nav', path });
+    } else if (c.type === 'http') {
+      const url = sanitizeRequestUrl(c.url);
+      const method = typeof c.method === 'string' && HTTP_METHODS.has(c.method.toUpperCase()) ? c.method.toUpperCase() : 'GET';
+      const status = Number.isInteger(c.status) && c.status >= 0 && c.status < 1000 ? c.status : 0;
+      const ms = Number.isFinite(c.ms) && c.ms >= 0 ? Math.min(600000, Math.round(c.ms)) : null;
+      if (url) out.push({ t, type: 'http', method, url, status, ms });
+    } else if (c.type === 'console') {
+      // console output sometimes includes tokens: never store them
+      const message = sanitizeText(c.message, 300);
+      if (message) out.push({ t, type: 'console', message: scrubSecrets(message) });
+    } else if (c.type === 'action') {
+      const name = sanitizeEventName(c.name);
+      if (name) out.push({ t, type: 'action', name });
+    }
+  }
+  return out.length ? out : null;
+}
+
 /** Normalise the user an app reports via DwsHub.identify(). */
 function sanitizeIdentity(value) {
   if (!value || typeof value !== 'object') return { id: null, email: null };
@@ -136,4 +195,7 @@ module.exports = {
   sanitizeProperties,
   sanitizeText,
   sanitizeIdentity,
+  sanitizeRelease,
+  sanitizeRequestUrl,
+  sanitizeBreadcrumbs,
 };

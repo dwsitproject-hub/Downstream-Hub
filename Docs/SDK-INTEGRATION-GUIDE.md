@@ -16,9 +16,11 @@ It takes about 10 minutes and needs no backend changes in your app.
 | **Time in app** | A heartbeat every 30 s while the page is **visible** on screen. A session ends after 30 minutes without activity. |
 | **JavaScript errors** | Uncaught errors and unhandled promise rejections, with stack traces (opaque cross-origin "Script error." noise is ignored). |
 | **Bug reports** | A floating **🐞 Report a bug** button. Users type what went wrong; the current page is attached automatically. |
+| **Breadcrumbs** | Attached to errors and bug reports only: the last ~30 navigations, API calls (**method, path and status only**), `console.error` messages and tracked actions. They show what led up to a problem — and are what **Sentinel**, the Hub's AI support agent, uses to find the root cause. |
 
-**Not collected:** keystrokes, form contents, clicks, cookies, or anything from other sites. Requests are
-sent without cookies (`credentials: 'omit'`).
+**Not collected:** keystrokes, form contents, clicks, cookies, request/response bodies or headers, query
+strings, or anything from other sites. Requests are sent without cookies (`credentials: 'omit'`). Tokens that
+appear in console messages are removed before storage.
 
 ---
 
@@ -101,6 +103,8 @@ Add these attributes to the `<script>` tag:
 | `data-bug-button-position` | `bottom-right` | `bottom-left` moves the button. |
 | `data-auto-page-views` | `true` | `false` stops automatic page views; call `DwsHub.page()` yourself. |
 | `data-capture-errors` | `true` | `false` stops automatic JS-error capture. |
+| `data-release` | — | Your build's version or git commit (e.g. `1.4.2` or `3fa9c1d`). Sentinel then reads the code of exactly that release. Recommended. |
+| `data-breadcrumbs` | `true` | `false` stops recording breadcrumbs (Sentinel's analyses get less precise). |
 | `data-debug` | `false` | `true` logs SDK activity to the browser console. |
 
 ## JavaScript API
@@ -136,6 +140,24 @@ Calling the SDK before the script has loaded? Queue calls instead:
 
 ---
 
+## Recommended: report your release
+
+Set `data-release` at build time so that error analyses look at the code users actually ran. Vite example:
+
+```html
+<script src="https://dwshub.kpndomain.com/api/sdk/v1/hub-sdk.js"
+        data-app-key="%VITE_HUB_SDK_KEY%" data-release="%VITE_GIT_SHA%" defer></script>
+```
+
+```bash
+VITE_GIT_SHA=$(git rev-parse --short HEAD) npm run build
+```
+
+Keeping function names in production bundles makes stack traces readable for people and for Sentinel
+(Vite: `esbuild: { keepNames: true }` in `vite.config.js`).
+
+---
+
 ## Check that it works
 
 1. Open your app and click around.
@@ -164,4 +186,6 @@ Still nothing? Add `data-debug="true"` to the script tag and open the browser co
   Never use Hub analytics data to grant access.
 - If a key leaks or is abused, an Admin clicks **Issue a new key** on the SDK screen — the old key stops
   working immediately — and you update the snippet.
-- The Hub stores page paths without query strings, error messages/stack traces, user agent and IP address.
+- The Hub stores page paths without query strings, error messages/stack traces, breadcrumbs, user agent and IP address.
+- When **Sentinel** analyses a report it sends the technical details to the Claude API with every email address
+  pseudonymised and secrets/IPs removed; see `Docs/SENTINEL-GUIDE.md`.

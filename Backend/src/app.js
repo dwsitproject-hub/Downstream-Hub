@@ -15,6 +15,7 @@ const ssoRoutes = require('./routes/sso');
 const activityRoutes = require('./routes/activity');
 const analyticsRoutes = require('./routes/analytics');
 const sdkRoutes = require('./routes/sdk');
+const sentinelRoutes = require('./routes/sentinel');
 
 const app = express();
 app.disable('x-powered-by');
@@ -85,5 +86,6 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/sso', ssoRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/sentinel', sentinelRoutes);
 
 module.exports = app;
