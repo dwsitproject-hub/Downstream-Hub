@@ -79,14 +79,16 @@ async function list(db, { status, kind, scope, limit = 100 } = {}) {
 
 async function setStatus(db, id, status, resolvedBy) {
   const resolved = status === 'resolved';
+  // A separate boolean ($4): reusing $2 in both SET and a comparison makes Postgres
+  // reject the query ("inconsistent types deduced for parameter $2").
   const { rows } = await db.query(
     `UPDATE bug_reports
        SET status = $2,
-           resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END,
-           resolved_by = CASE WHEN $2 = 'resolved' THEN $3 ELSE NULL END
+           resolved_at = CASE WHEN $4::boolean THEN now() ELSE NULL END,
+           resolved_by = CASE WHEN $4::boolean THEN $3::uuid ELSE NULL END
      WHERE id = $1
      RETURNING id, status, resolved_at`,
-    [id, resolved ? 'resolved' : 'open', resolvedBy || null]
+    [id, resolved ? 'resolved' : 'open', resolvedBy || null, resolved]
   );
   return rows[0] || null;
 }
