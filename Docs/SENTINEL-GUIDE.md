@@ -170,6 +170,42 @@ paths, session timeline, aggregated analytics, the team's notes, and the source 
 
 ---
 
+## Read-only service API (for the MCP Gateway and Milo)
+
+Milo's production-support agent reads Sentinel's results through the MCP Gateway, which calls this API
+with a **service key**. It is separate from admin sign-in and strictly read-only.
+
+| | |
+|---|---|
+| Base path | `/api/service/v1` — off (every path 404) until a key is configured |
+| Methods | `GET` only; anything else gets `405` before authentication |
+| Credential | `Authorization: Bearer hubsvc_…`. Only the key's SHA-256 hash is stored, in `HUB_SERVICE_READ_KEYS`. A service key is accepted nowhere else in the Hub, and user sessions are not accepted here. |
+| What it returns | Sentinel's stored results and the bug/error data they rest on. It never starts a Sentinel run or spends the Hub's Anthropic budget. |
+| Privacy | Every email address becomes a stable pseudonym (`user-3f2a…@redacted.invalid`; same person, same pseudonym). Tokens, keys and passwords in URLs are removed everywhere; IPs and `key=value` secrets are removed from captured app data. |
+| Limits | 120 requests per minute per key (`HUB_SERVICE_RATE_PER_MINUTE`); every list is capped at 50 rows and 90 days. One log line per request (client, path, status, time). |
+
+| Route | Returns |
+|---|---|
+| `GET /status` | Whether Sentinel is on, its model, queued/running/done/failed runs today |
+| `GET /applications` | Every application and the Hub: open reports, JS errors and user reports in the last 7 days, code connected, latest health verdict |
+| `GET /sentinel/runs?scope=&kind=&status=&days=&limit=` | Analyses, health reports and answers, newest first, with severity / health status and a one-line summary |
+| `GET /sentinel/runs/:id` | One run in full: root cause, evidence, proposed fix, patch, or the health report |
+| `GET /bug-reports?scope=&status=&kind=&days=&limit=` | Bug reports and captured errors with Sentinel's verdict |
+| `GET /errors?scope=&days=` | JS errors for one scope grouped by fingerprint, and per day |
+
+`scope` is `hub` or an application id (from `/applications`).
+
+**Create a key** (once, on the backend server), give the key to the gateway, put the hash line in the backend `.env`, rebuild:
+
+```bash
+docker exec downstream-hub-api node scripts/service-key.js mcp-gateway
+```
+
+To revoke, remove the entry from `HUB_SERVICE_READ_KEYS` and rebuild. Optional: `HUB_SERVICE_PSEUDONYM_KEY` sets
+the secret behind pseudonyms (defaults to `JWT_SECRET`; changing it changes every pseudonym).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

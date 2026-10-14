@@ -21,6 +21,8 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/src ./src
+# Admin scripts (e.g. `node scripts/service-key.js`), run with `docker exec`
+COPY --from=builder /app/scripts ./scripts
 # Non-root user cannot mkdir under root-owned /app; uploads must exist and be writable
 RUN mkdir -p /app/uploads/app-icons && chown -R nodejs:nodejs /app/uploads
 USER nodejs
