@@ -297,3 +297,13 @@ input {
   border-color: var(--color-primary);
   color: var(--color-primary-foreground);
 }
+
+/* Sentinel: "working" indicator */
+@keyframes sentinel-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.55; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+.sentinel-pulse { animation: sentinel-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .sentinel-pulse { animation: none; }
+}

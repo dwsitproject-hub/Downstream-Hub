@@ -223,6 +223,263 @@ async function userSummary(db, userId, days) {
   return rows[0] || null;
 }
 
+/* ---------- per-application usage, reported by the embeddable SDK ---------- */
+
+const SESSION_MINS = 'EXTRACT(EPOCH FROM (last_seen_at - started_at)) / 60.0';
+// A visitor is a Hub user, else the email the app reported, else the browser's anonymous id.
+const VISITOR = 'COALESCE(user_id::text, user_email, anonymous_id)';
+
+/** One row per application: in-app usage + launches from the Hub + bug counts. */
+async function appsOverview(db, days) {
+  const { rows } = await db.query(
+    `WITH s AS (
+       SELECT application_id,
+              COUNT(*)::int AS sessions,
+              COUNT(DISTINCT ${VISITOR})::int AS active_users,
+              ROUND(SUM(${SESSION_MINS})::numeric, 0) AS minutes,
+              COALESCE(SUM(page_views), 0)::int AS page_views
+       FROM app_sessions
+       WHERE started_at >= now() - $1::interval
+       GROUP BY application_id
+     ),
+     l AS (
+       SELECT application_id, COUNT(*)::int AS launches
+       FROM sso_access_logs
+       WHERE deleted_at IS NULL AND outcome = 'success' AND created_at >= now() - $1::interval
+       GROUP BY application_id
+     ),
+     b AS (
+       SELECT application_id,
+              COUNT(*) FILTER (WHERE status = 'open')::int AS open_bugs,
+              COUNT(*) FILTER (WHERE kind = 'client_error' AND created_at >= now() - $1::interval)::int AS errors,
+              COUNT(*) FILTER (WHERE kind = 'user_report' AND created_at >= now() - $1::interval)::int AS reports
+       FROM bug_reports
+       WHERE application_id IS NOT NULL
+       GROUP BY application_id
+     ),
+     seen AS (
+       SELECT application_id, MAX(last_seen_at) AS sdk_last_seen FROM app_sessions GROUP BY application_id
+     )
+     SELECT a.id, a.name, a.icon_url, a.sso_mode, a.sdk_enabled,
+            COALESCE(s.active_users, 0) AS active_users, COALESCE(s.sessions, 0) AS sessions,
+            COALESCE(s.minutes, 0) AS minutes, COALESCE(s.page_views, 0) AS page_views,
+            COALESCE(l.launches, 0) AS launches, COALESCE(b.open_bugs, 0) AS open_bugs,
+            COALESCE(b.errors, 0) AS errors, COALESCE(b.reports, 0) AS reports,
+            seen.sdk_last_seen
+     FROM applications a
+     LEFT JOIN s ON s.application_id = a.id
+     LEFT JOIN l ON l.application_id = a.id
+     LEFT JOIN b ON b.application_id = a.id
+     LEFT JOIN seen ON seen.application_id = a.id
+     WHERE a.deleted_at IS NULL
+     ORDER BY COALESCE(s.sessions, 0) DESC, COALESCE(l.launches, 0) DESC, a.name`,
+    [windowInterval(days)]
+  );
+  return rows;
+}
+
+async function appInfo(db, appId) {
+  const { rows } = await db.query(
+    `SELECT a.id, a.name, a.icon_url, a.target_url, a.sso_mode, a.sdk_enabled,
+            (SELECT MAX(last_seen_at) FROM app_sessions WHERE application_id = a.id) AS sdk_last_seen
+     FROM applications a WHERE a.id = $1 AND a.deleted_at IS NULL`,
+    [appId]
+  );
+  return rows[0] || null;
+}
+
+/** Everything the per-application dashboard shows. */
+async function appUsage(db, appId, days) {
+  const iv = windowInterval(days);
+  const q = (sql) => db.query(sql, [appId, iv]).then((r) => r.rows);
+  const [kpi, pageViewsByDay, sessionsByDay, topPages, topUsers, anonymous, topEvents, launches, bugs] = await Promise.all([
+    q(`SELECT COUNT(*)::int AS sessions,
+              COUNT(DISTINCT ${VISITOR})::int AS active_users,
+              COALESCE(ROUND(SUM(mins)::numeric, 0), 0) AS total_minutes,
+              COALESCE(ROUND(AVG(mins)::numeric, 1), 0) AS avg_session_minutes,
+              COALESCE(SUM(page_views), 0)::int AS page_views
+       FROM (SELECT *, ${SESSION_MINS} AS mins FROM app_sessions
+             WHERE application_id = $1 AND started_at >= now() - $2::interval) x`),
+    q(`SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS value
+       FROM app_events
+       WHERE application_id = $1 AND event_type = 'page_view' AND created_at >= now() - $2::interval
+       GROUP BY 1 ORDER BY 1`),
+    q(`SELECT to_char(date_trunc('day', started_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS value
+       FROM app_sessions
+       WHERE application_id = $1 AND started_at >= now() - $2::interval
+       GROUP BY 1 ORDER BY 1`),
+    q(`SELECT path, MAX(title) AS title, COUNT(*)::int AS views,
+              COUNT(DISTINCT COALESCE(user_id::text, user_email, session_key))::int AS visitors
+       FROM app_events
+       WHERE application_id = $1 AND event_type = 'page_view' AND created_at >= now() - $2::interval
+       GROUP BY path ORDER BY views DESC LIMIT 10`),
+    q(`SELECT s.user_id, COALESCE(u.email, s.user_email) AS email, bu.name AS department,
+              COUNT(*)::int AS sessions,
+              ROUND(SUM(EXTRACT(EPOCH FROM (s.last_seen_at - s.started_at)) / 60.0)::numeric, 0) AS minutes,
+              COALESCE(SUM(s.page_views), 0)::int AS page_views, MAX(s.last_seen_at) AS last_seen
+       FROM app_sessions s
+       LEFT JOIN users u ON u.id = s.user_id
+       LEFT JOIN business_units bu ON bu.id = u.business_unit_id AND bu.deleted_at IS NULL
+       WHERE s.application_id = $1 AND s.started_at >= now() - $2::interval
+         AND (s.user_id IS NOT NULL OR s.user_email IS NOT NULL)
+       GROUP BY s.user_id, COALESCE(u.email, s.user_email), bu.name
+       ORDER BY minutes DESC, sessions DESC LIMIT 10`),
+    q(`SELECT COUNT(*)::int AS sessions
+       FROM app_sessions
+       WHERE application_id = $1 AND started_at >= now() - $2::interval AND user_id IS NULL AND user_email IS NULL`),
+    q(`SELECT name, COUNT(*)::int AS count,
+              COUNT(DISTINCT COALESCE(user_id::text, user_email, session_key))::int AS users
+       FROM app_events
+       WHERE application_id = $1 AND event_type = 'custom' AND created_at >= now() - $2::interval
+       GROUP BY name ORDER BY count DESC LIMIT 10`),
+    q(`SELECT COUNT(*)::int AS launches
+       FROM sso_access_logs
+       WHERE application_id = $1 AND deleted_at IS NULL AND outcome = 'success' AND created_at >= now() - $2::interval`),
+    q(`SELECT COUNT(*) FILTER (WHERE status = 'open')::int AS open_bugs,
+              COUNT(*) FILTER (WHERE kind = 'client_error' AND created_at >= now() - $2::interval)::int AS errors,
+              COUNT(*) FILTER (WHERE kind = 'user_report' AND created_at >= now() - $2::interval)::int AS reports
+       FROM bug_reports WHERE application_id = $1`),
+  ]);
+  return {
+    kpi: { ...kpi[0], launches: launches[0].launches, anonymous_sessions: anonymous[0].sessions, ...bugs[0] },
+    pageViewsByDay,
+    sessionsByDay,
+    topPages,
+    topUsers,
+    topEvents,
+  };
+}
+
+/** Adds a "who" filter: a Hub user id, or the email an app reported for a non-Hub user. */
+function visitorFilter(alias, { userId, email }, params) {
+  if (userId) {
+    params.push(userId);
+    return `${alias}.user_id = $${params.length}`;
+  }
+  if (email) {
+    params.push(String(email).toLowerCase());
+    return `lower(COALESCE(u.email, ${alias}.user_email)) = $${params.length}`;
+  }
+  return null;
+}
+
+async function appSessions(db, appId, days, { userId, email, sort = 'recent', limit = 200 } = {}) {
+  const params = [appId, windowInterval(days)];
+  const where = ['s.application_id = $1', 's.started_at >= now() - $2::interval'];
+  const vf = visitorFilter('s', { userId, email }, params);
+  if (vf) where.push(vf);
+  params.push(clampLimit(limit));
+  const order = sort === 'longest' ? 'minutes DESC' : 's.started_at DESC';
+  const { rows } = await db.query(
+    `SELECT s.id, s.started_at, s.last_seen_at, s.page_views, s.user_id,
+            COALESCE(u.email, s.user_email) AS email,
+            ROUND((EXTRACT(EPOCH FROM (s.last_seen_at - s.started_at)) / 60.0)::numeric, 1) AS minutes,
+            (s.last_seen_at > now() - interval '2 minutes') AS is_active,
+            COUNT(*) OVER()::int AS total
+     FROM app_sessions s
+     LEFT JOIN users u ON u.id = s.user_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY ${order}
+     LIMIT $${params.length}`,
+    params
+  );
+  return { total: rows[0]?.total || 0, rows };
+}
+
+async function appPageViews(db, appId, days, { path, userId, email, day, limit = 200 } = {}) {
+  const params = [appId, windowInterval(days)];
+  const where = ['e.application_id = $1', "e.event_type = 'page_view'", 'e.created_at >= now() - $2::interval'];
+  if (path) { params.push(path); where.push(`e.path = $${params.length}`); }
+  if (day) { params.push(day); where.push(`to_char(date_trunc('day', e.created_at), 'YYYY-MM-DD') = $${params.length}`); }
+  const vf = visitorFilter('e', { userId, email }, params);
+  if (vf) where.push(vf);
+  params.push(clampLimit(limit));
+  const { rows } = await db.query(
+    `SELECT e.id, e.created_at, e.path, e.title, e.user_id, COALESCE(u.email, e.user_email) AS email,
+            COUNT(*) OVER()::int AS total
+     FROM app_events e
+     LEFT JOIN users u ON u.id = e.user_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY e.created_at DESC
+     LIMIT $${params.length}`,
+    params
+  );
+  return { total: rows[0]?.total || 0, rows };
+}
+
+/** All identified users of an application, plus how many sessions were anonymous. */
+async function appUsersUsage(db, appId, days) {
+  const iv = windowInterval(days);
+  const [users, anonymous] = await Promise.all([
+    db.query(
+      `SELECT s.user_id, COALESCE(u.email, s.user_email) AS email, bu.name AS department,
+              (s.user_id IS NOT NULL) AS is_hub_user,
+              COUNT(*)::int AS sessions,
+              ROUND(SUM(EXTRACT(EPOCH FROM (s.last_seen_at - s.started_at)) / 60.0)::numeric, 0) AS minutes,
+              COALESCE(SUM(s.page_views), 0)::int AS page_views, MAX(s.last_seen_at) AS last_seen
+       FROM app_sessions s
+       LEFT JOIN users u ON u.id = s.user_id
+       LEFT JOIN business_units bu ON bu.id = u.business_unit_id AND bu.deleted_at IS NULL
+       WHERE s.application_id = $1 AND s.started_at >= now() - $2::interval
+         AND (s.user_id IS NOT NULL OR s.user_email IS NOT NULL)
+       GROUP BY s.user_id, COALESCE(u.email, s.user_email), bu.name
+       ORDER BY minutes DESC, sessions DESC
+       LIMIT 500`,
+      [appId, iv]
+    ),
+    db.query(
+      `SELECT COUNT(*)::int AS sessions
+       FROM app_sessions
+       WHERE application_id = $1 AND started_at >= now() - $2::interval AND user_id IS NULL AND user_email IS NULL`,
+      [appId, iv]
+    ),
+  ]);
+  return { users: users.rows, anonymous_sessions: anonymous.rows[0].sessions };
+}
+
+/** One user's activity inside one application. */
+async function appUserUsage(db, appId, days, { userId, email }) {
+  const iv = windowInterval(days);
+  const sessionParams = [appId, iv];
+  const sessionFilter = visitorFilter('s', { userId, email }, sessionParams);
+  const eventParams = [appId, iv];
+  const eventFilter = visitorFilter('e', { userId, email }, eventParams);
+  if (!sessionFilter || !eventFilter) return null;
+  const [summary, pages, events, recent] = await Promise.all([
+    db.query(
+      `SELECT COUNT(*)::int AS sessions,
+              COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (s.last_seen_at - s.started_at)) / 60.0)::numeric, 0), 0) AS minutes,
+              COALESCE(SUM(s.page_views), 0)::int AS page_views,
+              MAX(s.last_seen_at) AS last_seen, MIN(s.started_at) AS first_seen,
+              MAX(COALESCE(u.email, s.user_email)) AS email, MAX(bu.name) AS department,
+              BOOL_OR(s.user_id IS NOT NULL) AS is_hub_user
+       FROM app_sessions s
+       LEFT JOIN users u ON u.id = s.user_id
+       LEFT JOIN business_units bu ON bu.id = u.business_unit_id AND bu.deleted_at IS NULL
+       WHERE s.application_id = $1 AND s.started_at >= now() - $2::interval AND ${sessionFilter}`,
+      sessionParams
+    ),
+    db.query(
+      `SELECT e.path, MAX(e.title) AS title, COUNT(*)::int AS views, MAX(e.created_at) AS last_viewed
+       FROM app_events e
+       LEFT JOIN users u ON u.id = e.user_id
+       WHERE e.application_id = $1 AND e.event_type = 'page_view' AND e.created_at >= now() - $2::interval AND ${eventFilter}
+       GROUP BY e.path ORDER BY views DESC LIMIT 20`,
+      eventParams
+    ),
+    db.query(
+      `SELECT e.name, COUNT(*)::int AS count, MAX(e.created_at) AS last_at
+       FROM app_events e
+       LEFT JOIN users u ON u.id = e.user_id
+       WHERE e.application_id = $1 AND e.event_type = 'custom' AND e.created_at >= now() - $2::interval AND ${eventFilter}
+       GROUP BY e.name ORDER BY count DESC LIMIT 20`,
+      eventParams
+    ),
+    appSessions(db, appId, days, { userId, email, limit: 20 }),
+  ]);
+  return { summary: summary.rows[0], pages: pages.rows, events: events.rows, sessions: recent.rows };
+}
+
 module.exports = {
   overview,
   topApps,
@@ -233,4 +490,11 @@ module.exports = {
   appUsers,
   appsForUser,
   userSummary,
+  appsOverview,
+  appInfo,
+  appUsage,
+  appSessions,
+  appPageViews,
+  appUsersUsage,
+  appUserUsage,
 };

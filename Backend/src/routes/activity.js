@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const { pool } = require('../db/pool');
 const userSessionsDb = require('../db/userSessionsDb');
 const bugReportsDb = require('../db/bugReportsDb');
+const sentinel = require('../lib/sentinel');
 const { authMiddleware } = require('../middleware/auth');
 const { getClientIp } = require('../middleware/audit');
 
@@ -51,6 +52,7 @@ router.post('/bug-report', authMiddleware, async (req, res) => {
       ipAddress: getClientIp(req),
     });
     res.status(201).json({ id: report.id, message: 'Thanks — your report has been submitted.' });
+    if (await sentinel.onBugReport(pool, report)) sentinel.nudge(pool);
   } catch (err) {
     console.error('Bug report error:', err);
     res.status(500).json({ error: 'Failed to submit bug report' });
@@ -62,7 +64,7 @@ router.post('/client-error', authMiddleware, clientErrorLimit, async (req, res) 
   try {
     const message = String(req.body?.message || '').trim();
     if (!message) return res.status(204).end();
-    await bugReportsDb.insert(pool, {
+    const report = await bugReportsDb.insert(pool, {
       userId: req.user.id,
       kind: 'client_error',
       message,
@@ -72,6 +74,7 @@ router.post('/client-error', authMiddleware, clientErrorLimit, async (req, res) 
       ipAddress: getClientIp(req),
     });
     res.status(201).json({ ok: true });
+    if (await sentinel.onBugReport(pool, report)) sentinel.nudge(pool);
   } catch (err) {
     console.error('Client error capture failed:', err);
     res.status(500).json({ error: 'Failed to record error' });

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import MultiSelectDropdown from './MultiSelectDropdown';
+import AppSdkModal from './AppSdkModal';
 import SsoBadge from '../SsoBadge';
 import { resolveIconSrc } from '../../utils/resolveIconSrc';
 import { applicationInitials } from '../../utils/applicationInitials';
@@ -85,6 +86,7 @@ export default function ApplicationsView({
 }) {
   const [view, setView] = useState(readView);
   const [ssoFilter, setSsoFilter] = useState('all');
+  const [sdkApp, setSdkApp] = useState(null);
 
   const counts = useMemo(() => {
     const sso = filteredApplications.filter((a) => a.sso_mode === 'oidc').length;
@@ -238,6 +240,7 @@ export default function ApplicationsView({
                 >
                   Open ↗
                 </a>
+                <button type="button" className="btn-secondary btn-compact" title="SDK — analytics & bug-report snippet" onClick={stop(() => setSdkApp(app))}>SDK</button>
                 <button type="button" style={s.deleteBtn} onClick={stop(() => onDelete(app))}>Delete</button>
               </div>
             </div>
@@ -282,6 +285,7 @@ export default function ApplicationsView({
                   <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 'var(--space-1)', alignItems: 'center' }}>
                       <button type="button" className="btn-secondary btn-compact" onClick={stop(() => onEdit(app))}>Edit</button>
+                      <button type="button" className="btn-secondary btn-compact" title="SDK — analytics & bug-report snippet" onClick={stop(() => setSdkApp(app))}>SDK</button>
                       <button type="button" style={s.deleteBtn} onClick={stop(() => onDelete(app))}>Delete</button>
                     </div>
                   </td>
@@ -291,6 +295,8 @@ export default function ApplicationsView({
           </table>
         </div>
       )}
+
+      {sdkApp && <AppSdkModal app={sdkApp} onClose={() => setSdkApp(null)} />}
     </section>
   );
 }
