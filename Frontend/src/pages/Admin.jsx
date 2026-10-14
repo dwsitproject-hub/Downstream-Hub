@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest, apiUpload } from '../api';
+import { copyText } from '../utils/clipboard';
 import MultiSelectDropdown from '../components/admin/MultiSelectDropdown';
 import ApplicationIconField from '../components/admin/ApplicationIconField';
 import AdminModal from '../components/admin/AdminModal';
@@ -633,7 +634,7 @@ export default function Admin() {
 
   function copyPasswordToClipboard() {
     if (!resetPasswordResult?.temporary_password) return;
-    navigator.clipboard.writeText(resetPasswordResult.temporary_password);
+    copyText(resetPasswordResult.temporary_password);
   }
 
   async function handleIconFile(e) {
@@ -1083,7 +1084,7 @@ export default function Admin() {
               onClose={() => setSsoPrelinkResult(null)}
               footer={
                 <div style={styles.modalFooterActions}>
-                  <button type="button" className="btn-secondary" onClick={() => navigator.clipboard.writeText(ssoPrelinkResult.url)}>Copy link</button>
+                  <button type="button" className="btn-secondary" onClick={() => copyText(ssoPrelinkResult.url)}>Copy link</button>
                   <button type="button" className="btn-secondary" onClick={() => setSsoPrelinkResult(null)}>Close</button>
                 </div>
               }
