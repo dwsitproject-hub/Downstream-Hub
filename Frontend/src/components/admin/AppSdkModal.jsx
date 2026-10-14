@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AdminModal from './AdminModal';
 import { apiRequest } from '../../api';
+import { copyText } from '../../utils/clipboard';
 
 function fmtRelative(v) {
   if (!v) return null;
@@ -14,21 +15,17 @@ function fmtRelative(v) {
 }
 
 function CodeBlock({ code, label }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState('');
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
+    const ok = await copyText(code);
+    setCopied(ok ? 'yes' : 'failed');
+    setTimeout(() => setCopied(''), 1800);
   }
   return (
     <div style={s.codeWrap}>
       <pre style={s.code} aria-label={label}>{code}</pre>
       <button type="button" className="btn-secondary btn-compact" style={s.copyBtn} onClick={copy}>
-        {copied ? 'Copied ✓' : 'Copy'}
+        {copied === 'yes' ? 'Copied ✓' : copied === 'failed' ? 'Copy failed' : 'Copy'}
       </button>
     </div>
   );

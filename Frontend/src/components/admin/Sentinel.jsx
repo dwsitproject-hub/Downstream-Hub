@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../api';
+import { copyText } from '../../utils/clipboard';
 import AdminModal from './AdminModal';
 import Markdown from './Markdown';
 
@@ -118,21 +119,20 @@ export function SentinelPill({ status, severity, summary }) {
   return <Pill tone="grey">Analysis failed</Pill>;
 }
 
-function CopyButton({ text, label = 'Copy' }) {
-  const [copied, setCopied] = useState(false);
+function CopyButton({ text, label = 'Copy', title }) {
+  const [state, setState] = useState(''); // '' | 'copied' | 'failed'
   return (
     <button
       type="button"
       className="btn-secondary btn-compact"
+      title={title}
       onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch { /* clipboard blocked */ }
+        const ok = await copyText(typeof text === 'function' ? text() : text);
+        setState(ok ? 'copied' : 'failed');
+        setTimeout(() => setState(''), 1800);
       }}
     >
-      {copied ? 'Copied ✓' : label}
+      {state === 'copied' ? 'Copied ✓' : state === 'failed' ? 'Copy failed' : label}
     </button>
   );
 }
@@ -166,6 +166,65 @@ function RunMeta({ run }) {
 }
 
 /* ---------- bug analysis ---------- */
+
+/** A fenced block whose fence is longer than any backtick run inside the text. */
+function mdFence(text, lang = '') {
+  const longest = Math.max(2, ...(String(text).match(/`+/g) || []).map((m) => m.length));
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}${lang}\n${String(text).replace(/\s+$/, '')}\n${fence}`;
+}
+
+/** The whole analysis as Markdown, ready to paste into a ticket, Teams or email. */
+function analysisMarkdown(report, run) {
+  const r = run.result || {};
+  const cap = (v) => (v ? `${v[0].toUpperCase()}${v.slice(1)}` : '');
+  const isError = report.kind === 'client_error';
+  const app = report.application_name || 'Downstream Hub';
+  const out = [`# Sentinel analysis — ${app}: ${r.summary || ''}`.trim(), ''];
+  out.push([
+    r.severity && `**Severity:** ${cap(r.severity)}`,
+    r.category && `**Category:** ${CATEGORY_LABEL[r.category] || r.category}`,
+    r.confidence && `**Confidence:** ${cap(r.confidence)}`,
+  ].filter(Boolean).join(' · '));
+  out.push('');
+  out.push(`- **Application:** ${app}`);
+  out.push(`- **Report:** ${isError ? 'Auto-captured JS error' : 'User bug report'} · ${report.status === 'resolved' ? 'Resolved' : 'Open'}`);
+  if (report.created_at) out.push(`- **Reported:** ${new Date(report.created_at).toLocaleString()}`);
+  if (report.page_url) out.push(`- **Page:** ${report.page_url}`);
+  if (report.reporter_email) out.push(`- **Reporter:** ${report.reporter_email}`);
+  if (report.release) out.push(`- **App release:** ${report.release}`);
+  if (r.repo?.repo) out.push(`- **Code analysed:** ${r.repo.repo} @ ${r.repo.ref} (${String(r.repo.commit || '').slice(0, 7)})`);
+  else if (r.code_available === false) out.push('- **Code analysed:** none (no repository connected — runtime evidence only)');
+  if (run.own === false) out.push('- **Note:** same error as an earlier report; this analysis was made for that occurrence');
+  out.push('', `## ${isError ? 'Error message' : 'What the user wrote'}`, mdFence(report.message || ''));
+  if (report.stack) {
+    const lines = String(report.stack).split('\n');
+    out.push('', '## Stack trace', mdFence(lines.slice(0, 40).join('\n') + (lines.length > 40 ? `\n… ${lines.length - 40} more lines` : '')));
+  }
+  if (r.impact) out.push('', '## Impact', r.impact);
+  if (r.root_cause) out.push('', '## Root cause', r.root_cause);
+  const evidence = Array.isArray(r.evidence) ? r.evidence : [];
+  if (evidence.length) {
+    out.push('', '## Evidence');
+    evidence.forEach((e) => out.push(`- [${e.source}]${e.file ? ` \`${e.file}${e.line ? `:${e.line}` : ''}\`` : ''} ${e.detail}`));
+  }
+  if (r.proposed_fix) out.push('', '## Proposed fix', r.proposed_fix);
+  if (r.patch) out.push('', '## Suggested patch', mdFence(r.patch, 'diff'));
+  if (r.workaround) out.push('', '## Workaround until fixed', r.workaround);
+  const steps = Array.isArray(r.next_steps) ? r.next_steps : [];
+  if (steps.length) {
+    out.push('', '## Next steps');
+    steps.forEach((x, i) => out.push(`${i + 1}. ${x}`));
+  }
+  const files = Array.isArray(r.files_examined) ? r.files_examined : [];
+  if (files.length) {
+    out.push('', '## Files examined');
+    files.forEach((f) => out.push(`- \`${f}\``));
+  }
+  out.push('', '---', `Analysed by Sentinel (Downstream Hub)${run.model ? ` · ${run.model}` : ''} · ${fmtWhen(run.finished_at || run.created_at)} · report ${report.id}`);
+  out.push('Review before acting — Sentinel proposes, engineers decide.');
+  return out.join('\n');
+}
 
 function AnalysisResult({ run, shared }) {
   const r = run.result || {};
@@ -267,11 +326,20 @@ export function SentinelBugAnalysis({ report }) {
     <section style={s.box} aria-label="Sentinel analysis">
       <div style={s.boxHead}>
         <div style={s.title}><SentinelMark /> <span>Sentinel analysis</span></div>
-        {canRun && (
-          <button type="button" className={run ? 'btn-secondary btn-compact' : 'btn-primary btn-compact'} onClick={analyze} disabled={starting}>
-            {starting ? 'Starting…' : run ? 'Re-analyse' : 'Analyse with Sentinel'}
-          </button>
-        )}
+        <div style={s.actions}>
+          {run?.status === 'done' && (
+            <CopyButton
+              text={() => analysisMarkdown(report, run)}
+              label="Copy report"
+              title="Copy the full analysis as Markdown (for a ticket, Teams or email)"
+            />
+          )}
+          {canRun && (
+            <button type="button" className={run ? 'btn-secondary btn-compact' : 'btn-primary btn-compact'} onClick={analyze} disabled={starting}>
+              {starting ? 'Starting…' : run ? 'Re-analyse' : 'Analyse with Sentinel'}
+            </button>
+          )}
+        </div>
       </div>
       {state.loading && <p style={s.muted}>Loading…</p>}
       {state.error && <div style={s.error}>{state.error}</div>}
