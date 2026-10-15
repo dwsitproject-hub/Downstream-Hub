@@ -1,10 +1,17 @@
 /**
  * Claude Messages API over plain fetch (no SDK dependency), with retries for
  * rate limits, overload and transient network failures.
+ *
+ * Server-side refusal fallbacks (fallbacks: "default") are sent on the models that accept
+ * them. If the API rejects the beta, the call is retried without it and fallbacks stay off
+ * for the rest of the process (same approach as Milo).
  */
 const RETRY_STATUS = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 const MAX_ATTEMPTS = 4;
 const TIMEOUT_MS = 5 * 60 * 1000;
+const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+
+let fallbacksSupported = true;
 
 class LlmError extends Error {
   constructor(message, status) {
@@ -27,19 +34,29 @@ function friendly(status, body) {
   return `Anthropic API error ${status}${detail ? `: ${detail}` : ''}`;
 }
 
-async function createMessage(cfg, body) {
+/**
+ * @param {object} cfg   sentinelConfig() (+ the run's model)
+ * @param {object} body  Messages API request body
+ * @param {object} [opts]
+ * @param {boolean} [opts.fallbacks]  request server-side refusal fallbacks
+ */
+async function createMessage(cfg, body, { fallbacks = false } = {}) {
+  let useFallbacks = fallbacks && fallbacksSupported;
   let lastError;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const headers = {
+      'content-type': 'application/json',
+      'x-api-key': cfg.apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+    const payload = useFallbacks ? { ...body, fallbacks: 'default' } : body;
+    if (useFallbacks) headers['anthropic-beta'] = FALLBACK_BETA;
     let res;
     try {
       res = await fetch(`${cfg.baseUrl}/v1/messages`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': cfg.apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(body),
+        headers,
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (err) {
@@ -49,8 +66,15 @@ async function createMessage(cfg, body) {
       throw lastError;
     }
     if (res.ok) return res.json();
-    const payload = await res.json().catch(() => null);
-    lastError = new LlmError(friendly(res.status, payload), res.status);
+    const errBody = await res.json().catch(() => null);
+    if (useFallbacks && res.status === 400 && /fallback|beta/i.test(errBody?.error?.message || '')) {
+      fallbacksSupported = false;
+      useFallbacks = false;
+      console.warn('Sentinel: refusal fallbacks rejected by the API — continuing without them');
+      attempt -= 1; // the retry without fallbacks is not a failed attempt
+      continue;
+    }
+    lastError = new LlmError(friendly(res.status, errBody), res.status);
     if (!RETRY_STATUS.has(res.status) || attempt === MAX_ATTEMPTS) throw lastError;
     const retryAfter = parseFloat(res.headers.get('retry-after'));
     await sleep(Number.isFinite(retryAfter) ? Math.min(60, retryAfter) * 1000 : 2000 * 2 ** (attempt - 1));
@@ -58,4 +82,6 @@ async function createMessage(cfg, body) {
   throw lastError;
 }
 
-module.exports = { createMessage, LlmError };
+const llmInternals = { reset: () => { fallbacksSupported = true; } };
+
+module.exports = { createMessage, LlmError, llmInternals };

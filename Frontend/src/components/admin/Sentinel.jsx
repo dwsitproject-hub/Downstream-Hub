@@ -553,6 +553,16 @@ export function SentinelCard({ scope, scopeName, days }) {
         <div style={{ minWidth: 0 }}>
           <div style={s.title}><SentinelMark size={22} /> <span style={{ fontSize: 'var(--text-base)' }}>Sentinel</span>
             {status && (enabled ? <Pill tone="green">On</Pill> : <Pill tone="grey">Off</Pill>)}
+            {status?.model && (
+              <Pill
+                tone={status.model_set_from === 'milo' ? 'blue' : 'grey'}
+                title={status.model_set_from === 'milo'
+                  ? `Set from Milo${status.model_source ? ` by ${status.model_source}` : ''}${status.model_updated_at ? ` on ${fmtWhen(status.model_updated_at)}` : ''}`
+                  : 'Server default (SENTINEL_MODEL). Changing Sentinel’s model in Milo sets it here.'}
+              >
+                {status.model}{status.model_set_from === 'milo' ? ' · set from Milo' : ''}
+              </Pill>
+            )}
           </div>
           <div style={s.sub}>
             AI production support for {scopeName}: root-causes bugs automatically, reports on health, answers questions.

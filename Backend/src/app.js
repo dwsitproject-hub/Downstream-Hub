@@ -16,6 +16,8 @@ const activityRoutes = require('./routes/activity');
 const analyticsRoutes = require('./routes/analytics');
 const sdkRoutes = require('./routes/sdk');
 const sentinelRoutes = require('./routes/sentinel');
+const serviceRoutes = require('./routes/service');
+const serviceControlRoutes = require('./routes/serviceControl');
 
 const app = express();
 app.disable('x-powered-by');
@@ -87,5 +89,9 @@ app.use('/api/sso', ssoRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/sentinel', sentinelRoutes);
+// Read-only API for machine clients (the MCP Gateway); service keys only. See routes/service.js.
+app.use('/api/service/v1', serviceRoutes);
+// The one machine-settable value (Sentinel's model, from Milo); control keys only. See routes/serviceControl.js.
+app.use('/api/service/control/v1', serviceControlRoutes);
 
 module.exports = app;
