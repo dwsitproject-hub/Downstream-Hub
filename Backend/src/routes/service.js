@@ -12,6 +12,7 @@ const rateLimit = require('express-rate-limit');
 const { pool } = require('../db/pool');
 const serviceDb = require('../db/serviceReadDb');
 const { sentinelConfig } = require('../lib/sentinel/config');
+const sentinelSettings = require('../lib/sentinel/settings');
 const { configuredKeys, matchKey, redactDeep } = require('../lib/serviceRead');
 
 const router = express.Router();
@@ -75,7 +76,15 @@ router.get('/status', async (req, res) => {
               MAX(finished_at) AS last_finished_at
        FROM sentinel_runs`
     );
-    return send(res, { as_of: new Date().toISOString(), sentinel_enabled: cfg.enabled, model: cfg.model, runs: rows[0] });
+    const current = await sentinelSettings.currentModel(pool);
+    return send(res, {
+      as_of: new Date().toISOString(),
+      sentinel_enabled: cfg.enabled,
+      model: current.model,
+      model_set_from: current.from === 'milo' ? 'milo' : 'server default',
+      model_updated_at: current.updated_at,
+      runs: rows[0],
+    });
   } catch (err) { return fail(res, err, 'status'); }
 });
 

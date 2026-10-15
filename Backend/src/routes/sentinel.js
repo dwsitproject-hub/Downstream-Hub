@@ -18,6 +18,7 @@ const { pool } = require('../db/pool');
 const sentinelDb = require('../db/sentinelDb');
 const sentinel = require('../lib/sentinel');
 const { sentinelConfig } = require('../lib/sentinel/config');
+const sentinelSettings = require('../lib/sentinel/settings');
 const { checkAccess, validRepo, validRef } = require('../lib/sentinel/github');
 const { authMiddleware, requireAdmin } = require('../middleware/auth');
 const { auditLog, getClientIp } = require('../middleware/audit');
@@ -70,11 +71,14 @@ function runDto(run) {
 router.get('/status', async (req, res) => {
   try {
     const cfg = sentinelConfig();
-    const stats = await sentinelDb.stats(pool);
+    const [stats, current] = await Promise.all([sentinelDb.stats(pool), sentinelSettings.currentModel(pool)]);
     res.json({
       enabled: cfg.enabled,
       reason: cfg.enabled ? null : cfg.switchedOff ? 'switched_off' : 'no_api_key',
-      model: cfg.model,
+      model: current.model,
+      model_set_from: current.from,                // 'milo' | 'env'
+      model_source: current.source,
+      model_updated_at: current.updated_at,
       github_token: Boolean(cfg.githubToken),
       auto_daily_limit: cfg.autoDailyLimit,
       stats,

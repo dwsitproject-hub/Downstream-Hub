@@ -206,6 +206,37 @@ the secret behind pseudonyms (defaults to `JWT_SECRET`; changing it changes ever
 
 ---
 
+## Sentinel's model follows Milo
+
+When the Boss changes **Sentinel's model on Milo's Agent team page**, Milo pushes the same model to the Hub,
+so the Hub's Sentinel (which writes the analyses) and Milo's Sentinel (which reads them) run the same model.
+
+```
+Milo dropdown ──► MCP Gateway tool dwshub_set_sentinel_model ──► Hub PUT /api/service/control/v1/sentinel/model
+```
+
+| | |
+|---|---|
+| What it can change | **Only** Sentinel's model, and only to one of: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`. Nothing else in the Hub. |
+| Credential | A separate **control key** (`hubctl_…`), hashes only in `HUB_SERVICE_CONTROL_KEYS`. The read key (`hubsvc_…`) is refused here, the control key is refused on the read API and the admin API. Off (404) until configured. |
+| Audit | Every change is written to `audit_logs` as `SENTINEL_MODEL_SET` (before/after model, who). The gateway and Milo log the call too. |
+| Precedence | A model set from Milo overrides `SENTINEL_MODEL`. The Hub's Sentinel card shows the model and "set from Milo". |
+| Per-model request | Thinking, effort (`SENTINEL_EFFORT`, default `high`) and refusal fallbacks are sent only to models that accept them (Haiku 4.5 gets none). Runs already in progress finish on the old model. |
+
+**Set up** (once per environment):
+
+```bash
+docker exec downstream-hub-api node scripts/service-key.js mcp-gateway --control
+```
+
+Put the printed `HUB_SERVICE_CONTROL_KEYS=mcp-gateway:<hash>` line in the backend `.env` and recreate the
+container; give the printed `hubctl_…` key to the gateway as `DWSHUB_CONTROL_KEY`. To stop Milo changing the
+model, remove the entry and recreate the container. To go back to `SENTINEL_MODEL`, delete the stored choice:
+`docker exec downstream-hub-db psql -U hub -d downstream_hub -c "DELETE FROM sentinel_settings WHERE key = 'model'"`
+(then wait 30 seconds, or recreate the backend).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -231,6 +262,9 @@ the secret behind pseudonyms (defaults to `JWT_SECRET`; changing it changes ever
 | `SENTINEL_ENABLED` | `1` | `0` switches Sentinel off. |
 | `SENTINEL_MODEL` | `claude-opus-5-5` | Claude model. |
 | `SENTINEL_THINKING` | on | `off` disables extended thinking. |
+| `SENTINEL_EFFORT` | `high` | `low` / `medium` / `high` / `xhigh` / `max`, on models that accept effort (Opus 5.5 would otherwise default to `medium`). |
+| `SENTINEL_FALLBACKS` | on | `off` stops server-side refusal fallbacks (sent only to models that accept them). |
+| `HUB_SERVICE_CONTROL_KEYS` | — | Control keys (`name:sha256`) that may set Sentinel's model from Milo. |
 | `SENTINEL_GITHUB_TOKEN` | — | Read-only GitHub token. |
 | `SENTINEL_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise: `https://<host>/api/v3`. |
 | `SENTINEL_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Only if traffic must go through an internal gateway. |

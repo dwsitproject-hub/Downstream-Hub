@@ -11,6 +11,10 @@
  *   rules Sentinel applies before anything reaches Claude.
  *
  * Create a key:  node scripts/service-key.js mcp-gateway
+ *
+ * Control keys (`hubctl_…`, HUB_SERVICE_CONTROL_KEYS) are a separate credential for the one
+ * write the Hub accepts from machines — Sentinel's model (routes/serviceControl.js). A read
+ * key never works there and a control key never works on the read API.
  */
 const crypto = require('crypto');
 const { scrubSecrets } = require('./sentinel/privacy');
@@ -20,9 +24,11 @@ const HEX64 = /^[0-9a-f]{64}$/i;
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
-/** [{ name, hash }] from HUB_SERVICE_READ_KEYS; malformed entries are ignored (and logged once). */
-function configuredKeys(env = process.env) {
-  const raw = String(env.HUB_SERVICE_READ_KEYS || '').trim();
+const warned = new Set();
+
+/** [{ name, hash }] from HUB_SERVICE_READ_KEYS (or `variable`); malformed entries are ignored (and logged once). */
+function configuredKeys(env = process.env, variable = 'HUB_SERVICE_READ_KEYS') {
+  const raw = String(env[variable] || '').trim();
   if (!raw) return [];
   const keys = [];
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
@@ -30,17 +36,17 @@ function configuredKeys(env = process.env) {
     const name = idx > 0 ? part.slice(0, idx).trim() : '';
     const hash = idx > 0 ? part.slice(idx + 1).trim().toLowerCase() : '';
     if (name && HEX64.test(hash)) keys.push({ name, hash });
-    else if (!configuredKeys.warned) {
-      configuredKeys.warned = true;
-      console.warn('Service API: ignoring a malformed HUB_SERVICE_READ_KEYS entry (expected name:sha256hex).');
+    else if (!warned.has(variable)) {
+      warned.add(variable);
+      console.warn(`Service API: ignoring a malformed ${variable} entry (expected name:sha256hex).`);
     }
   }
   return keys;
 }
 
 /** The key's name when the token matches a configured hash, else null. Constant-time per key. */
-function matchKey(token, keys) {
-  if (typeof token !== 'string' || !token.startsWith('hubsvc_') || token.length > 200) return null;
+function matchKey(token, keys, prefix = 'hubsvc_') {
+  if (typeof token !== 'string' || !token.startsWith(prefix) || token.length > 200) return null;
   const got = Buffer.from(sha256(token), 'hex');
   let found = null;
   for (const k of keys) {
@@ -49,8 +55,8 @@ function matchKey(token, keys) {
   return found;
 }
 
-function newKey() {
-  const key = `hubsvc_${crypto.randomBytes(32).toString('base64url')}`;
+function newKey(prefix = 'hubsvc_') {
+  const key = `${prefix}${crypto.randomBytes(32).toString('base64url')}`;
   return { key, hash: sha256(key) };
 }
 

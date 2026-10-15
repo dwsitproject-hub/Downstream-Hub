@@ -7,6 +7,7 @@
  */
 const sentinelDb = require('../../db/sentinelDb');
 const { sentinelConfig } = require('./config');
+const settings = require('./settings');
 const { Pseudonymizer } = require('./privacy');
 const { buildTools, appAnalytics, hubAnalytics } = require('./tools');
 const { runAgent } = require('./agent');
@@ -56,8 +57,14 @@ async function snapshotFor(ctx, days) {
 }
 
 /** Run one queued job to completion and store the outcome. */
+/** The model a run actually used: the configured one, plus any refusal-fallback model. */
+function modelLabel(configured, servedBy = []) {
+  const others = servedBy.filter((m) => m && m !== configured);
+  return (others.length ? `${configured} (fallback: ${others.join(', ')})` : configured).slice(0, 80);
+}
+
 async function executeRun(db, run) {
-  const cfg = sentinelConfig();
+  const cfg = { ...sentinelConfig(), model: (await settings.currentModel(db)).model };
   const started = Date.now();
   const privacy = new Pseudonymizer();
   try {
@@ -116,7 +123,7 @@ async function executeRun(db, run) {
     await sentinelDb.finishRun(db, run.id, {
       status: 'done',
       result,
-      model: cfg.model,
+      model: modelLabel(cfg.model, outcome.servedBy),
       inputTokens: outcome.usage.input,
       outputTokens: outcome.usage.output,
       toolCalls: outcome.toolCalls,
@@ -171,7 +178,8 @@ async function startWorker(db) {
   const requeued = await sentinelDb.requeueInterrupted(db).catch(() => 0);
   worker.timer = setInterval(() => { tick(db); }, cfg.pollMs);
   worker.timer.unref();
-  console.log(`Sentinel: on — model ${cfg.model}, code access ${cfg.githubToken ? 'token configured' : 'public repositories only'}${requeued ? `, ${requeued} interrupted run(s) re-queued` : ''}`);
+  const current = await settings.currentModel(db).catch(() => ({ model: cfg.model, from: 'env' }));
+  console.log(`Sentinel: on — model ${current.model}${current.from === 'milo' ? ' (set from Milo)' : ''}, code access ${cfg.githubToken ? 'token configured' : 'public repositories only'}${requeued ? `, ${requeued} interrupted run(s) re-queued` : ''}`);
   tick(db);
 }
 
