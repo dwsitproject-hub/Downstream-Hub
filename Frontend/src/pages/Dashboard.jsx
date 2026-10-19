@@ -186,24 +186,26 @@ export default function Dashboard() {
                 style={styles.card}
                 onClick={() => handleAppClick(app)}
                 disabled={!!redirecting}
+                title={app.description ? `${app.name} — ${app.description}` : app.name}
               >
-                <span style={styles.cardBadge}>
-                  <SsoBadge ssoMode={app.sso_mode} />
-                </span>
-                <div style={styles.cardBody}>
-                  <div style={styles.cardIcon}>
-                    {iconSrc ? (
-                      <img src={iconSrc} alt="" style={styles.iconImg} />
-                    ) : (
-                      <span style={styles.iconInitials} title={app.name}>
-                        {applicationInitials(app.name)}
-                      </span>
-                    )}
-                  </div>
-                  <div style={styles.cardName}>{app.name}</div>
-                  <div style={styles.cardDesc}>{app.description || ''}</div>
+                <div style={styles.cardIcon}>
+                  {iconSrc ? (
+                    <img src={iconSrc} alt="" style={styles.iconImg} />
+                  ) : (
+                    <span style={styles.iconInitials} aria-hidden="true">
+                      {applicationInitials(app.name)}
+                    </span>
+                  )}
                 </div>
-                {redirecting === app.id && <div style={styles.redirecting}>Opening…</div>}
+                <div style={styles.cardText}>
+                  <div style={styles.cardTop}>
+                    <span style={styles.cardName}>{app.name}</span>
+                    <SsoBadge ssoMode={app.sso_mode} style={styles.badge} />
+                  </div>
+                  {redirecting === app.id
+                    ? <div style={styles.redirecting}>Opening…</div>
+                    : app.description && <div style={styles.cardDesc}>{app.description}</div>}
+                </div>
               </button>
               );
             })}
@@ -228,35 +230,32 @@ const styles = {
   userBu: { fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', fontStyle: 'italic' },
   adminLink: { color: 'var(--color-primary)', textDecoration: 'none', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-medium)' },
   logoutBtn: {},
-  main: { maxWidth: 960, margin: '0 auto', padding: 'var(--space-4)' },
+  main: { width: '100%', boxSizing: 'border-box', padding: 'var(--space-4)' }, // full window width (more tiles per row), aligned with the header
   error: { padding: 'var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
   empty: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-3)', alignItems: 'stretch' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-2)', alignItems: 'stretch' },
   tools: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' },
   search: { maxWidth: 420 },
   chips: { display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' },
   chip: { borderRadius: 999 },
   chipCount: { display: 'inline-block', marginLeft: 6, padding: '0 7px', borderRadius: 999, background: 'var(--color-bg-light)', color: 'var(--color-text-steel)', fontSize: 'var(--text-xs)', fontWeight: 600 },
-  section: { marginBottom: 'var(--space-5)', scrollMarginTop: 'var(--space-4)' },
-  sectionHead: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', width: '100%', padding: '0 0 var(--space-2)', marginBottom: 'var(--space-3)', background: 'none', border: 'none', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text-charcoal)' },
+  section: { marginBottom: 'var(--space-4)', scrollMarginTop: 'var(--space-4)' },
+  sectionHead: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', width: '100%', padding: '0 0 6px', marginBottom: 'var(--space-2)', background: 'none', border: 'none', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text-charcoal)' },
   caret: { width: 14, color: 'var(--color-text-steel)', fontSize: 12 },
   sectionTitle: { fontFamily: 'var(--font-heading)', fontSize: 'var(--text-base)', fontWeight: 'var(--font-weight-semibold)' },
   card: {
     borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-4)',
-    paddingTop: 'var(--space-5)',
-    textAlign: 'center',
+    padding: '10px 12px',
+    textAlign: 'left',
     cursor: 'pointer',
-    position: 'relative',
     display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
     height: '100%',
     width: '100%',
+    minWidth: 0,
   },
-  cardBadge: { position: 'absolute', top: 'var(--space-2)', right: 'var(--space-2)' },
-  cardBody: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, width: '100%' },
-  cardIcon: { width: 48, height: 48, flexShrink: 0, marginBottom: 'var(--space-3)', borderRadius: '12px', overflow: 'hidden', background: 'var(--color-bg-lighter)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  cardIcon: { width: 40, height: 40, flexShrink: 0, borderRadius: 10, overflow: 'hidden', background: 'var(--color-bg-lighter)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   iconImg: { width: '100%', height: '100%', objectFit: 'cover' },
   iconInitials: {
     width: '100%',
@@ -267,33 +266,33 @@ const styles = {
     background: '#A84335',
     color: '#fff',
     fontWeight: 700,
-    fontSize: '13px',
+    fontSize: '12px',
     letterSpacing: '0.04em',
     fontFamily: 'var(--font-heading, system-ui, sans-serif)',
   },
+  cardText: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  cardTop: { display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)' },
   cardName: {
+    flex: 1,
+    minWidth: 0,
     fontWeight: 'var(--font-weight-semibold)',
     fontSize: 'var(--text-small)',
-    lineHeight: 'var(--line-height-default)',
-    marginBottom: 'var(--space-1)',
+    lineHeight: 1.3,
     color: 'var(--color-text-charcoal)',
-    width: '100%',
-    minHeight: 'calc(2 * var(--text-small) * var(--line-height-default))',
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
     overflow: 'hidden',
+    overflowWrap: 'anywhere',
   },
+  badge: { flexShrink: 0, marginTop: 1 },
   cardDesc: {
     fontSize: 'var(--text-xs)',
     color: 'var(--color-text-steel)',
-    lineHeight: 'var(--line-height-default)',
-    width: '100%',
-    minHeight: 'calc(3 * var(--text-xs) * var(--line-height-default))',
-    display: '-webkit-box',
-    WebkitLineClamp: 3,
-    WebkitBoxOrient: 'vertical',
+    lineHeight: 1.35,
+    whiteSpace: 'nowrap',
     overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
-  redirecting: { marginTop: 'auto', paddingTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-primary)' },
+  redirecting: { fontSize: 'var(--text-xs)', color: 'var(--color-primary)', fontWeight: 'var(--font-weight-medium)' },
 };
