@@ -33,7 +33,8 @@ async function setApplicationBusinessUnits(db, appId, buIds) {
 async function listActive(db, businessUnitId) {
   const { rows } = await db.query(
     `SELECT a.id, a.name, a.description, a.icon_url, a.target_url, a.target_bu_id,
-            a.oauth_client_id, a.oidc_redirect_uris, a.sso_mode, a.created_at, a.updated_at
+            a.oauth_client_id, a.oidc_redirect_uris, a.sso_mode, a.created_at, a.updated_at,
+            a.group_id, a.sort_order
      FROM applications a
      WHERE a.deleted_at IS NULL
        AND (
@@ -43,7 +44,7 @@ async function listActive(db, businessUnitId) {
          )
          ${businessUnitId ? 'OR EXISTS (SELECT 1 FROM application_business_units abu WHERE abu.application_id = a.id AND abu.business_unit_id = $1)' : ''}
        )
-     ORDER BY a.name`,
+     ORDER BY a.sort_order, a.name`,
     businessUnitId ? [businessUnitId] : []
   );
   return rows;
@@ -57,6 +58,8 @@ async function listAllWithBuName(db) {
   const { rows } = await db.query(
     `SELECT a.id, a.name, a.description, a.icon_url, a.target_url, a.target_bu_id,
             a.oauth_client_id, a.oidc_redirect_uris, a.sso_mode, a.created_at, a.updated_at,
+            a.group_id, a.sort_order,
+            (SELECT g.name FROM application_groups g WHERE g.id = a.group_id) AS group_name,
             COALESCE(
               array_agg(bu.id ORDER BY bu.name) FILTER (WHERE bu.id IS NOT NULL),
               '{}'
@@ -108,6 +111,8 @@ async function listAllWithBuNameFiltered(db, buIds = [], includeGlobal = false) 
   const { rows } = await db.query(
     `SELECT a.id, a.name, a.description, a.icon_url, a.target_url, a.target_bu_id,
             a.oauth_client_id, a.oidc_redirect_uris, a.sso_mode, a.created_at, a.updated_at,
+            a.group_id, a.sort_order,
+            (SELECT g.name FROM application_groups g WHERE g.id = a.group_id) AS group_name,
             COALESCE(
               array_agg(bu.id ORDER BY bu.name) FILTER (WHERE bu.id IS NOT NULL),
               '{}'
