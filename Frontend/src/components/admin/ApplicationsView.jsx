@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import AppSdkModal from './AppSdkModal';
+import OrganizeAppsModal from './OrganizeAppsModal';
+import { apiRequest } from '../../api';
 import SsoBadge from '../SsoBadge';
 import { resolveIconSrc } from '../../utils/resolveIconSrc';
 import { applicationInitials } from '../../utils/applicationInitials';
@@ -83,10 +85,22 @@ export default function ApplicationsView({
   onAdd,
   onEdit,
   onDelete,
+  onLayoutSaved,
 }) {
   const [view, setView] = useState(readView);
   const [ssoFilter, setSsoFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all'); // 'all' | 'none' | group id
   const [sdkApp, setSdkApp] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [organizing, setOrganizing] = useState(false);
+
+  const loadGroups = useCallback(() => {
+    apiRequest('/api/app-groups').then((d) => setGroups(d.groups || [])).catch(() => setGroups([]));
+  }, []);
+  useEffect(() => { loadGroups(); }, [loadGroups]);
+  useEffect(() => {
+    if (groupFilter !== 'all' && groupFilter !== 'none' && !groups.some((g) => g.id === groupFilter)) setGroupFilter('all');
+  }, [groups, groupFilter]);
 
   const counts = useMemo(() => {
     const sso = filteredApplications.filter((a) => a.sso_mode === 'oidc').length;
@@ -96,13 +110,16 @@ export default function ApplicationsView({
   const visible = useMemo(() => {
     const list = filteredApplications.filter((a) => (
       ssoFilter === 'all' ? true : ssoFilter === 'oidc' ? a.sso_mode === 'oidc' : a.sso_mode !== 'oidc'
+    )).filter((a) => (
+      groupFilter === 'all' ? true : groupFilter === 'none' ? !a.group_id : a.group_id === groupFilter
     ));
     return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredApplications, ssoFilter]);
+  }, [filteredApplications, ssoFilter, groupFilter]);
 
-  const filtersActive = hasFilters || ssoFilter !== 'all';
+  const filtersActive = hasFilters || ssoFilter !== 'all' || groupFilter !== 'all';
   const clearAll = () => {
     setSsoFilter('all');
+    setGroupFilter('all');
     onClearFilters();
   };
   const changeView = (v) => {
@@ -117,7 +134,18 @@ export default function ApplicationsView({
           <h2 style={s.title}>Applications</h2>
           <p style={s.subtitle}>Manage internal apps, who can see them, and how they sign in.</p>
         </div>
-        <button type="button" className="btn-primary" onClick={onAdd}>+ Add application</button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setOrganizing(true)}
+            disabled={loading || applications.length === 0}
+            title="Organize dashboard: group and order the applications users see"
+          >
+            ▤ Organize dashboard
+          </button>
+          <button type="button" className="btn-primary" onClick={onAdd}>+ Add application</button>
+        </div>
       </div>
 
       <div style={s.toolbar}>
@@ -146,6 +174,19 @@ export default function ApplicationsView({
             </button>
           ))}
         </div>
+        {groups.length > 0 && (
+          <select
+            className="form-input"
+            style={s.groupSelect}
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            aria-label="Filter by dashboard group"
+          >
+            <option value="all">All groups</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.app_count})</option>)}
+            <option value="none">Ungrouped</option>
+          </select>
+        )}
         {filtersActive && (
           <button type="button" className="btn-secondary" onClick={clearAll}>Clear filters</button>
         )}
@@ -212,6 +253,8 @@ export default function ApplicationsView({
                 </dd>
                 <dt style={s.metaKey}>Visible to</dt>
                 <dd style={s.metaVal}><Visibility app={app} /></dd>
+                <dt style={s.metaKey}>Group</dt>
+                <dd style={s.metaVal}>{app.group_name ? <span style={s.groupChip}>{app.group_name}</span> : <span style={s.muted}>Ungrouped</span>}</dd>
                 {app.sso_mode === 'oidc' && (
                   <>
                     <dt style={s.metaKey}>Client ID</dt>
@@ -254,6 +297,7 @@ export default function ApplicationsView({
                 <th style={s.th}>Application</th>
                 <th style={s.th}>Target URL</th>
                 <th style={s.th}>Visible to</th>
+                <th style={s.th}>Group</th>
                 <th style={s.th}>Sign-in</th>
                 <th style={{ ...s.th, width: 1 }}>Actions</th>
               </tr>
@@ -276,6 +320,7 @@ export default function ApplicationsView({
                     </a>
                   </td>
                   <td style={s.td}><Visibility app={app} /></td>
+                  <td style={s.td}>{app.group_name ? <span style={s.groupChip}>{app.group_name}</span> : <span style={s.muted}>—</span>}</td>
                   <td style={s.td}>
                     <SsoBadge ssoMode={app.sso_mode} />
                     {app.sso_mode === 'oidc' && (
@@ -297,6 +342,18 @@ export default function ApplicationsView({
       )}
 
       {sdkApp && <AppSdkModal app={sdkApp} onClose={() => setSdkApp(null)} />}
+      {organizing && (
+        <OrganizeAppsModal
+          applications={applications}
+          groups={groups}
+          onClose={() => setOrganizing(false)}
+          onSaved={() => {
+            setOrganizing(false);
+            loadGroups();
+            if (onLayoutSaved) onLayoutSaved();
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -331,6 +388,8 @@ const s = {
   chipRow: { display: 'flex', flexWrap: 'wrap', gap: 4 },
   chip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#E0ECFF', color: '#1D4ED8', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
   chipGlobal: { background: 'var(--color-bg-light)', color: 'var(--color-text-steel)' },
+  groupChip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#F3E8FF', color: '#6B21A8', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
+  groupSelect: { width: 'auto', minWidth: 160, maxWidth: 240 },
   initials: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#A84335', color: '#fff', fontWeight: 700, letterSpacing: '0.04em', fontFamily: 'var(--font-heading, system-ui, sans-serif)' },
 
   tableWrap: { background: 'var(--color-bg-white)', border: '1px solid var(--color-border-light)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' },

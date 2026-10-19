@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../api';
@@ -7,19 +7,76 @@ import { resolveIconSrc } from '../utils/resolveIconSrc';
 import SsoBadge from '../components/SsoBadge';
 import HubLogo from '../components/HubLogo';
 
+const COLLAPSED_KEY = 'hub.dashboard.collapsed';
+const OTHER = 'other';
+const SEARCH_FROM = 8; // show the search box once there are this many apps
+
+function readCollapsed() {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]');
+    return new Set(Array.isArray(v) ? v : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed(set) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]));
+  } catch {
+    /* storage unavailable — keep in memory only */
+  }
+}
+
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const [applications, setApplications] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [redirecting, setRedirecting] = useState(null);
+  const [query, setQuery] = useState('');
+  const [collapsed, setCollapsed] = useState(readCollapsed);
 
   useEffect(() => {
     apiRequest('/api/applications/for-me')
-      .then((data) => setApplications(data.applications || []))
+      .then((data) => {
+        setApplications(data.applications || []);
+        setGroups(data.groups || []);
+      })
       .catch((err) => setError(err.error || 'Failed to load applications'))
       .finally(() => setLoading(false));
   }, []);
+
+  // Sections in the admin's order; apps arrive already ordered within each group.
+  const sections = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const match = (a) => !q || a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q);
+    const known = new Set(groups.map((g) => g.id));
+    const list = groups.map((g) => ({ key: g.id, name: g.name, apps: applications.filter((a) => a.group_id === g.id && match(a)) }));
+    const others = applications.filter((a) => (!a.group_id || !known.has(a.group_id)) && match(a));
+    list.push({ key: OTHER, name: groups.length ? 'Other applications' : null, apps: others });
+    return list.filter((sec) => sec.apps.length > 0);
+  }, [applications, groups, query]);
+
+  const grouped = groups.length > 0;
+  const searching = query.trim() !== '';
+  const shown = sections.reduce((n, sec) => n + sec.apps.length, 0);
+
+  function toggle(key) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveCollapsed(next);
+      return next;
+    });
+  }
+
+  function jumpTo(key) {
+    if (collapsed.has(key)) toggle(key);
+    setTimeout(() => document.getElementById(`apps-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
 
   async function handleAppClick(app) {
     setRedirecting(app.id);
@@ -74,8 +131,52 @@ export default function Dashboard() {
         ) : applications.length === 0 ? (
           <p style={styles.empty}>No applications yet. {user?.role === 'Admin' && 'Add some in Admin.'}</p>
         ) : (
+          <>
+            {(applications.length >= SEARCH_FROM || (grouped && sections.length > 1)) && (
+              <div style={styles.tools}>
+                {applications.length >= SEARCH_FROM && (
+                  <input
+                    type="search"
+                    className="form-input"
+                    style={styles.search}
+                    placeholder="Find an application…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Find an application"
+                  />
+                )}
+                {grouped && sections.length > 1 && !searching && (
+                  <nav aria-label="Jump to a group" style={styles.chips}>
+                    {sections.map((sec) => (
+                      <button key={sec.key} type="button" className="an-seg" style={styles.chip} onClick={() => jumpTo(sec.key)}>
+                        {sec.name} <span style={styles.chipCount}>{sec.apps.length}</span>
+                      </button>
+                    ))}
+                  </nav>
+                )}
+              </div>
+            )}
+            {searching && shown === 0 && <p style={styles.empty}>No application matches “{query.trim()}”.</p>}
+            {sections.map((sec) => {
+              const isCollapsed = !searching && !!sec.name && collapsed.has(sec.key);
+              return (
+                <section key={sec.key} id={`apps-${sec.key}`} style={styles.section} aria-label={sec.name || 'Applications'}>
+                  {sec.name && (
+                    <button
+                      type="button"
+                      style={styles.sectionHead}
+                      onClick={() => toggle(sec.key)}
+                      aria-expanded={!isCollapsed}
+                      disabled={searching}
+                    >
+                      <span style={styles.caret} aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                      <span style={styles.sectionTitle}>{sec.name}</span>
+                      <span style={styles.chipCount}>{sec.apps.length}</span>
+                    </button>
+                  )}
+                  {!isCollapsed && (
           <div style={styles.grid}>
-            {applications.map((app) => {
+            {sec.apps.map((app) => {
               const iconSrc = resolveIconSrc(app.icon_url);
               return (
               <button
@@ -107,6 +208,11 @@ export default function Dashboard() {
               );
             })}
           </div>
+                  )}
+                </section>
+              );
+            })}
+          </>
         )}
       </main>
     </div>
@@ -126,6 +232,15 @@ const styles = {
   error: { padding: 'var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
   empty: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-3)', alignItems: 'stretch' },
+  tools: { display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' },
+  search: { maxWidth: 420 },
+  chips: { display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' },
+  chip: { borderRadius: 999 },
+  chipCount: { display: 'inline-block', marginLeft: 6, padding: '0 7px', borderRadius: 999, background: 'var(--color-bg-light)', color: 'var(--color-text-steel)', fontSize: 'var(--text-xs)', fontWeight: 600 },
+  section: { marginBottom: 'var(--space-5)', scrollMarginTop: 'var(--space-4)' },
+  sectionHead: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', width: '100%', padding: '0 0 var(--space-2)', marginBottom: 'var(--space-3)', background: 'none', border: 'none', borderBottom: '1px solid var(--color-border-light)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text-charcoal)' },
+  caret: { width: 14, color: 'var(--color-text-steel)', fontSize: 12 },
+  sectionTitle: { fontFamily: 'var(--font-heading)', fontSize: 'var(--text-base)', fontWeight: 'var(--font-weight-semibold)' },
   card: {
     borderRadius: 'var(--radius-md)',
     padding: 'var(--space-4)',

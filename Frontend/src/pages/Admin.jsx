@@ -1152,6 +1152,12 @@ export default function Admin() {
           onAdd={openCreate}
           onEdit={openEdit}
           onDelete={setDeleteConfirm}
+          onLayoutSaved={() => {
+            apiRequest('/api/applications')
+              .then((data) => setApplications(data.applications || []))
+              .catch((err) => setError(err.error || 'Failed to reload applications'));
+            setSuccessMessage('Dashboard layout saved. Users see the new groups the next time they open the Hub.');
+          }}
         />
 
         <AdminFormModal

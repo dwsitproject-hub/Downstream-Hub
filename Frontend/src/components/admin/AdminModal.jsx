@@ -5,6 +5,7 @@ const SIZE_MAX_WIDTH = {
   md: 560,
   lg: 640,
   xl: 720,
+  xxl: 960,
 };
 
 /**
@@ -13,7 +14,7 @@ const SIZE_MAX_WIDTH = {
  *
  * Props:
  *   title        — optional heading (aria-labelledby)
- *   size         — 'sm' | 'md' | 'lg' | 'xl' (default 'sm')
+ *   size         — 'sm' | 'md' | 'lg' | 'xl' | 'xxl' (default 'sm')
  *   wide         — legacy alias for size='lg' when size not set
  *   scrollable   — scroll body when content is tall (default true)
  *   footer       — optional sticky footer node (e.g. action buttons)

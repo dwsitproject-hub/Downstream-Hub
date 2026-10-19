@@ -9,6 +9,7 @@ const express = require('express');
 const multer = require('multer');
 const { pool } = require('../db/pool');
 const applicationsDb = require('../db/applicationsDb');
+const appGroupsDb = require('../db/appGroupsDb');
 const businessUnitsDb = require('../db/businessUnitsDb');
 const usersDb = require('../db/usersDb');
 const sdkDb = require('../db/sdkDb');
@@ -161,6 +162,8 @@ function toPublicAppDto(app) {
     description: app.description,
     icon_url: app.icon_url,
     sso_mode: app.sso_mode,
+    group_id: app.group_id ?? null,
+    sort_order: app.sort_order ?? null,
     created_at: app.created_at,
     updated_at: app.updated_at,
   };
@@ -171,8 +174,16 @@ router.get('/for-me', authMiddleware, async (req, res) => {
   try {
     const user = await usersDb.getById(pool, req.user.id);
     const buId = user?.business_unit_id ?? null;
-    const applications = await applicationsDb.listActive(pool, buId);
-    res.json({ applications: applications.map(toPublicAppDto) });
+    const [applications, groups] = await Promise.all([
+      applicationsDb.listActive(pool, buId),
+      appGroupsDb.listGroups(pool),
+    ]);
+    // Only groups this user has something in; names and order only.
+    const used = new Set(applications.map((a) => a.group_id).filter(Boolean));
+    res.json({
+      applications: applications.map(toPublicAppDto),
+      groups: groups.filter((g) => used.has(g.id)).map((g) => ({ id: g.id, name: g.name })),
+    });
   } catch (err) {
     console.error('List applications for-me error:', err);
     res.status(500).json({ error: 'Failed to list applications' });
