@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../api';
 import BugReportButton from './BugReportButton';
+import { isExtensionOnlyStack } from '../utils/extensionNoise';
 
 const HEARTBEAT_MS = 45 * 1000;
 
@@ -44,7 +45,7 @@ export default function ActivityTracker() {
 
     const report = (message, stack) => {
       const msg = String(message || '').slice(0, 500);
-      if (!msg) return;
+      if (!msg || isExtensionOnlyStack(stack)) return;
       const now = Date.now();
       // de-dupe identical errors fired in quick succession
       if (lastErrorRef.current.msg === msg && now - lastErrorRef.current.at < 10000) return;

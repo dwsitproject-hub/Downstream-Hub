@@ -92,4 +92,22 @@ describe('sdkPolicy', () => {
       expect(p.sanitizeProperties({ big: 'x'.repeat(3000) })).toBeNull();
     });
   });
+
+  describe('isExtensionOnlyStack', () => {
+    it('flags a stack made only of extension frames (the MetaMask report)', () => {
+      expect(p.isExtensionOnlyStack(
+        'i: Failed to connect to MetaMask\n    at Object.connect (chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js:12:4822)',
+      )).toBe(true);
+      expect(p.isExtensionOnlyStack('at x (moz-extension://abc/content.js:1:2)\nat y (safari-web-extension://d/e.js:3:4)')).toBe(true);
+    });
+
+    it('keeps any stack that touches the app, and stacks with no URL', () => {
+      expect(p.isExtensionOnlyStack(
+        'at a (chrome-extension://abc/inpage.js:1:1)\nat b (https://dwshub.kpndomain.com/assets/index-x.js:2:3)',
+      )).toBe(false);
+      expect(p.isExtensionOnlyStack('TypeError: x is undefined\n    at render (Dashboard.jsx:12)')).toBe(false);
+      expect(p.isExtensionOnlyStack('')).toBe(false);
+      expect(p.isExtensionOnlyStack(undefined)).toBe(false);
+    });
+  });
 });
