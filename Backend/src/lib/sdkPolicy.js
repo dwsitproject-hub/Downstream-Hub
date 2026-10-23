@@ -171,6 +171,23 @@ function sanitizeBreadcrumbs(value) {
   return out.length ? out : null;
 }
 
+const STACK_URL_RE = /\b([a-z][a-z0-9+.-]*):\/\/[^\s)]+/gi;
+const EXTENSION_SCHEMES = new Set([
+  'chrome-extension', 'moz-extension', 'safari-extension', 'safari-web-extension', 'ms-browser-extension',
+]);
+
+/**
+ * True when every script URL in a stack belongs to a browser extension (MetaMask, password
+ * managers, ad blockers...). Their injected scripts run on every page and throw into the
+ * page's global handlers, but they are not the app's errors. A stack with no URL at all is
+ * NOT treated as noise: there is nothing to say it isn't the app's own.
+ */
+function isExtensionOnlyStack(stack) {
+  if (typeof stack !== 'string' || !stack) return false;
+  const schemes = [...stack.matchAll(STACK_URL_RE)].map((m) => m[1].toLowerCase());
+  return schemes.length > 0 && schemes.every((s) => EXTENSION_SCHEMES.has(s));
+}
+
 /** Normalise the user an app reports via DwsHub.identify(). */
 function sanitizeIdentity(value) {
   if (!value || typeof value !== 'object') return { id: null, email: null };
@@ -198,4 +215,5 @@ module.exports = {
   sanitizeRelease,
   sanitizeRequestUrl,
   sanitizeBreadcrumbs,
+  isExtensionOnlyStack,
 };

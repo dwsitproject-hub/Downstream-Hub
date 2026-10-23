@@ -287,9 +287,21 @@
     window.addEventListener('hashchange', function () { pageView(); });
   }
 
+  // True when every script URL in the stack is a browser extension's (MetaMask, password
+  // managers...): their injected scripts throw into the page's handlers but are not the app.
+  function isExtensionOnlyStack(stack) {
+    var urls = String(stack || '').match(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)]+/gi);
+    if (!urls) return false;
+    for (var i = 0; i < urls.length; i++) {
+      if (!/^(chrome|moz|safari|safari-web|ms-browser)-extension:/i.test(urls[i])) return false;
+    }
+    return true;
+  }
+
   function reportError(message, stack) {
     var msg = String(message || '').slice(0, 1000);
     if (!msg || msg === 'Script error.' || msg === 'Script error') return; // opaque cross-origin noise
+    if (isExtensionOnlyStack(stack)) return;
     var now = Date.now();
     if (msg === state.lastError && now - state.lastErrorAt < 10000) return;
     if (state.errorCount >= MAX_ERRORS_PER_PAGE) return;

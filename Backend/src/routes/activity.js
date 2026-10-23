@@ -10,6 +10,7 @@ const { pool } = require('../db/pool');
 const userSessionsDb = require('../db/userSessionsDb');
 const bugReportsDb = require('../db/bugReportsDb');
 const sentinel = require('../lib/sentinel');
+const { isExtensionOnlyStack } = require('../lib/sdkPolicy');
 const { authMiddleware } = require('../middleware/auth');
 const { getClientIp } = require('../middleware/audit');
 
@@ -63,7 +64,8 @@ router.post('/bug-report', authMiddleware, async (req, res) => {
 router.post('/client-error', authMiddleware, clientErrorLimit, async (req, res) => {
   try {
     const message = String(req.body?.message || '').trim();
-    if (!message) return res.status(204).end();
+    // Errors thrown by a browser extension's own scripts are not Hub errors.
+    if (!message || isExtensionOnlyStack(req.body?.stack)) return res.status(204).end();
     const report = await bugReportsDb.insert(pool, {
       userId: req.user.id,
       kind: 'client_error',

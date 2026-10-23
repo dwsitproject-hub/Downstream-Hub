@@ -107,7 +107,8 @@ function cleanEvents(raw, origin) {
       out.push({ type: 'heartbeat' });
     } else if (e.type === 'error' && errors < MAX_ERRORS_PER_BATCH) {
       const message = p.sanitizeText(e.message, 1000);
-      if (message) {
+      // Browser-extension noise (older SDK copies still send it): not this app's error.
+      if (message && !p.isExtensionOnlyStack(e.stack)) {
         errors += 1;
         const pagePath = p.sanitizePath(e.path);
         out.push({
