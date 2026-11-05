@@ -733,7 +733,7 @@ export default function Admin() {
   return (
     <div style={styles.page} className="admin-page hub-backdrop">
       <header style={styles.header}>
-        <Link to="/" style={styles.brand}>
+        <Link to="/" style={styles.brand} aria-label="Downstream Hub dashboard">
           <img src="/logo.png" alt="" width={32} height={32} style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 10px rgba(232,116,58,0.55))' }} />
           <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
             <span style={styles.title}>Downstream Hub</span>

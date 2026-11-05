@@ -173,7 +173,11 @@ export default function Login() {
                 </div>
               ) : (
                 <p style={{ margin: 0, color: 'var(--color-text-steel)' }}>
-                  {mfaChallenge ? 'Enter the verification code we sent you.' : 'Sign in with your work email to open your tools.'}
+                  {mfaChallenge
+                    ? 'Enter the verification code we sent you.'
+                    : magicLinkPending
+                      ? 'One more step: confirm it’s you from your email.'
+                      : 'Sign in with your work email to open your tools.'}
                 </p>
               )}
             </div>

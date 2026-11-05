@@ -111,7 +111,7 @@ function AccountMenu({ user, onSignOut }) {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" className="hub-icon-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} style={{ height: 48, padding: '0 8px 0 6px', gap: 10, color: 'var(--color-text-charcoal)' }}>
+      <button type="button" className="hub-icon-btn" aria-label={`Account menu for ${user?.email || 'you'}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} style={{ height: 48, padding: '0 8px 0 6px', gap: 10, color: 'var(--color-text-charcoal)' }}>
         <span style={s.avatarRing}>
           <span style={s.avatar}>{initials}</span>
         </span>
@@ -244,7 +244,10 @@ export default function Dashboard() {
   const shown = sections.reduce((n, sec) => n + sec.apps.length, 0);
   const pinnedApps = pinned.map((id) => byId.get(id)).filter(Boolean);
   const recentApps = recent.map((id) => byId.get(id)).filter(Boolean);
-  const orbitApps = (pinnedApps.length ? pinnedApps : recentApps.length ? recentApps : apps).slice(0, MAX_ORBIT);
+  // Pinned apps own the orbit; until there are some, suggest recent apps topped up with the first few.
+  const orbitApps = pinnedApps.length
+    ? pinnedApps.slice(0, MAX_ORBIT)
+    : [...new Set([...recentApps, ...apps])].slice(0, 6);
   const orbitIsSuggested = pinnedApps.length === 0;
 
   const togglePin = useCallback((id) => {
@@ -315,7 +318,7 @@ export default function Dashboard() {
     <div className="hub-backdrop" style={{ fontSize: 15, lineHeight: 1.5 }}>
       <header style={s.header}>
         <div style={s.headerInner}>
-          <Link to="/" style={s.brand}>
+          <Link to="/" style={s.brand} aria-label="Downstream Hub home">
             <img src="/logo.png" alt="" width={34} height={34} style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 10px rgba(232,116,58,0.55))' }} />
             <span style={s.brandText}>Downstream Hub</span>
           </Link>
@@ -328,7 +331,7 @@ export default function Dashboard() {
           </div>
           <ThemeToggle />
           {user?.role === 'Admin' && (
-            <Link to="/admin" className="hub-icon-btn">
+            <Link to="/admin" className="hub-icon-btn" aria-label="Admin">
               <Icon name="shield" size={18} />
               <span className="hub-hide-sm">Admin</span>
             </Link>
