@@ -6,6 +6,16 @@
  *   DwsHub.track('report_exported', { format: 'xlsx' });
  *   DwsHub.reset();   // on sign-out
  *
+ * Calls made before this script has run are not lost: push them onto an array at
+ * window.DwsHub and they are replayed in order once it loads, e.g.
+ *   (window.DwsHub = window.DwsHub || []).push(['identify', { id: '...', email: '...' }]);
+ * The same push keeps working after load (on the array or on DwsHub itself), so code that
+ * holds a reference to the early array never drops a call.
+ *
+ * identify() is safe to repeat: the same identity again is a no-op, and a different one
+ * starts a new session. Activity recorded anonymously in this browser before identify()
+ * is attributed to the user by the Hub, up to the previous person who signed in here.
+ *
  * Collects: page views (path only — query strings are never sent), time in app,
  * uncaught JS errors, and user bug reports from a floating "Report a bug" button.
  * Errors and reports carry breadcrumbs — the last few navigations, API calls (method,
@@ -18,7 +28,7 @@
   var existing = window.DwsHub;
   if (existing && existing.__loaded) return;
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var HEARTBEAT_MS = 30 * 1000;
   var FLUSH_MS = 5 * 1000;
   var MAX_QUEUE = 100;
@@ -54,6 +64,8 @@
     heartbeatTimer: null,
     widget: null,
     crumbs: [],
+    identitySent: null,
+    warned: {},
   };
 
   /* ---------- small utilities ---------- */
@@ -62,12 +74,30 @@
     if (cfg.debug && window.console) console.log.apply(console, ['[DwsHub]'].concat([].slice.call(arguments)));
   }
 
+  /** A console warning that integrators see without debug mode, once per kind per page. */
+  function warnOnce(kind, message) {
+    if (state.warned[kind] || !window.console) return;
+    state.warned[kind] = true;
+    console.warn('[DwsHub] ' + message);
+  }
+
+  // When localStorage is blocked (private mode, strict policies) values live for this page
+  // instead. Without this every batch got a new session and anonymous id.
+  var memory = {};
+
   function store(key, value) {
     try {
-      if (value === undefined) return JSON.parse(window.localStorage.getItem(key));
+      if (value === undefined) {
+        var raw = window.localStorage.getItem(key);
+        return raw === null ? null : JSON.parse(raw);
+      }
       if (value === null) window.localStorage.removeItem(key);
       else window.localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) { /* storage blocked — run in memory */ }
+    } catch (e) {
+      if (value === undefined) return Object.prototype.hasOwnProperty.call(memory, key) ? memory[key] : null;
+      if (value === null) delete memory[key];
+      else memory[key] = value;
+    }
     return null;
   }
 
@@ -165,10 +195,21 @@
     var payload = basePayload();
     payload.events = events;
     post('/collect', payload, keepalive).then(function (res) {
-      if (res && res.status >= 400 && res.status !== 429) log('collect rejected', res.status);
+      if (!res || res.status < 400 || res.status === 429) return;
+      log('collect rejected', res.status);
+      // 403 = wrong app key, this origin not allowed, or the SDK switched off for the app.
+      if (res.status === 403 && res.json) {
+        res.json().then(function (body) {
+          warnOnce('rejected', 'the Downstream Hub refused this app\'s data (' + ((body && body.error) || res.status) +
+            '). Check data-app-key and the allowed origins in Hub Admin > Applications > SDK.');
+        }, function () { warnOnce('rejected', 'the Downstream Hub refused this app\'s data (HTTP 403).'); });
+      } else {
+        warnOnce('rejected', 'the Downstream Hub did not accept this app\'s data (HTTP ' + res.status + ').');
+      }
     }).catch(function () {
       // network failure: put events back for the next attempt (bounded)
       state.queue = events.concat(state.queue).slice(-MAX_QUEUE);
+      warnOnce('network', 'could not reach the Downstream Hub at ' + cfg.endpoint + '; will keep retrying.');
     });
   }
 
@@ -490,21 +531,38 @@
     init: init,
     /** Tell the SDK who is signed in: { id: Hub user id (OIDC "sub"), email } */
     identify: function (user) {
-      if (!user || typeof user !== 'object') return api;
-      var next = { id: user.id ? String(user.id) : undefined, email: user.email ? String(user.email) : undefined };
+      var next = user && typeof user === 'object'
+        ? { id: user.id ? String(user.id).trim() || undefined : undefined, email: user.email ? String(user.email).trim().toLowerCase() || undefined : undefined }
+        : null;
+      if (!next || (!next.id && !next.email)) {
+        warnOnce('identify', 'identify() needs { id: <Hub user id>, email } - ignored.');
+        return api;
+      }
+      var key = (next.id || '') + '|' + (next.email || '');
+      // Same person again (every route change, a re-render, a retry): nothing to do.
+      if (key === state.identitySent && state.started) return api;
       var prev = state.user;
       state.user = next;
       if (cfg.appKey) store('dwshub.u.' + cfg.appKey, next);
+      // A different person in this browser starts a new session. Anonymous -> known keeps
+      // the session, so what they did before identify() stays theirs.
       if (prev && (prev.id !== next.id || prev.email !== next.email)) rotateSession();
-      enqueue({ type: 'heartbeat' }, true);
+      if (state.started) {
+        state.identitySent = key;
+        enqueue({ type: 'heartbeat' }, true); // attach the user to this session right away
+      }
       return api;
     },
     /** Call on sign-out: forgets the user and starts a fresh session. */
     reset: function () {
       flush(true);
       state.user = null;
+      state.identitySent = null;
       state.crumbs = []; // the next person's reports must not carry this person's activity
       if (cfg.appKey) store('dwshub.u.' + cfg.appKey, null);
+      // A new browser identity too, so the next person's anonymous activity is never
+      // attributed to the one who just signed out.
+      store('dwshub.aid', randomId());
       rotateSession();
       return api;
     },
@@ -525,7 +583,24 @@
     },
     setBugButtonVisible: function (visible) { setBugButtonVisible(visible); return api; },
     flush: function () { flush(); return api; },
+    /** Same as calling the method: DwsHub.push(['identify', {...}]). Lets queue-style code keep working. */
+    push: function () {
+      for (var i = 0; i < arguments.length; i++) run(arguments[i]);
+      return 0;
+    },
   };
+
+  function run(call) {
+    if (!call || typeof call.length !== 'number' || typeof api[call[0]] !== 'function' || call[0] === 'push') {
+      warnOnce('command', 'unknown command ' + (call && call[0]) + ' - supported: init, identify, reset, track, page, openBugReport, setBugButtonVisible, flush.');
+      return;
+    }
+    try {
+      api[call[0]].apply(api, [].slice.call(call, 1));
+    } catch (e) {
+      warnOnce('command-error', call[0] + '() failed: ' + (e && e.message));
+    }
+  }
 
   window.DwsHub = api;
 
@@ -544,10 +619,15 @@
     });
   }
 
-  // Replay calls queued before the script loaded: window.DwsHub = [['identify', {...}], ...]
+  // Replay calls queued before the script loaded: window.DwsHub = [['identify', {...}], ...],
+  // in order. Then the old array keeps working: code that captured it before load and pushes
+  // later is run straight away instead of being dropped.
   if (Array.isArray(existing)) {
-    existing.forEach(function (call) {
-      if (call && typeof api[call[0]] === 'function') api[call[0]].apply(api, call.slice(1));
-    });
+    var pending = existing.splice(0, existing.length);
+    existing.push = function () {
+      for (var i = 0; i < arguments.length; i++) run(arguments[i]);
+      return 0;
+    };
+    for (var k = 0; k < pending.length; k++) run(pending[k]);
   }
 })(window, document);
