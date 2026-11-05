@@ -39,40 +39,54 @@ appear in console messages are removed before storage.
 Paste the snippet into the `<head>` of every page, **before your application's own script**:
 
 ```html
+<script>window.DwsHub = window.DwsHub || [];</script>
 <script src="https://dwshub.kpndomain.com/api/sdk/v1/hub-sdk.js"
-        data-app-key="dwsk_your_key_here" defer></script>
+        data-app-key="dwsk_your_key_here" defer
+        onerror="console.warn('[DwsHub] the Downstream Hub SDK could not be loaded (blocked or unreachable)')"></script>
 ```
 
 That's enough for page views, time in app, JS errors and the bug button. In a single-page app you add it
-once, in `index.html`.
+once, in `index.html`. The first line gives your code a queue to call into before the SDK has loaded;
+the `onerror` makes a blocked script visible in the console instead of failing silently.
 
 ## Step 2 — Tell the SDK who is signed in
 
-Your app signs users in through Downstream Hub (OIDC). After you have validated the `id_token`, pass the
-Hub user id (the **`sub`** claim) and email:
+Your app signs users in through Downstream Hub (OIDC). Pass the Hub user id (the **`sub`** claim) and email
+**every time your app knows who is signed in**: after the login callback *and* when it restores a signed-in
+user from a stored session on page load. Use the `push` form, which works whether or not the SDK has loaded
+yet:
 
 ```js
-window.DwsHub && DwsHub.identify({ id: claims.sub, email: claims.email });
+(window.DwsHub = window.DwsHub || []).push(['identify', { id: claims.sub, email: claims.email }]);
 ```
 
 On sign-out:
 
 ```js
-window.DwsHub && DwsHub.reset();
+(window.DwsHub = window.DwsHub || []).push(['reset']);
 ```
 
-Call `identify` on every page load once you know the user (it is cheap and idempotent). Pages viewed
-earlier in the same session — e.g. the login screen — are attributed to the user automatically.
+> ⚠️ Do **not** write `window.DwsHub && DwsHub.identify(...)` or `window.DwsHub?.identify(...)`. The SDK
+> loads with `defer`, so an app that restores its user quickly calls this before the SDK exists, and the
+> call is silently skipped. Until the next login that person is anonymous and missing from
+> *Most active users* (TAS, 3 Nov 2026). Earlier versions of this guide showed that form; please change it.
+
+`identify` is idempotent: calling it again with the same user sends nothing, so calling it on every page
+load or route change is fine. A different user starts a new session. Pages viewed before `identify` in
+the same browser — the login screen, or a whole visit where the call was missed — are attributed to the
+user when they identify, back to the previous person who signed in on that browser and at most 14 days.
 
 **React example**
 
 ```jsx
+const hub = (...call) => (window.DwsHub = window.DwsHub || []).push(call);
+
 useEffect(() => {
-  if (user) window.DwsHub?.identify({ id: user.sub, email: user.email });
+  if (user) hub('identify', { id: user.sub, email: user.email }); // also runs for a restored session
 }, [user]);
 
 function signOut() {
-  window.DwsHub?.reset();
+  hub('reset');
   // ...your existing sign-out
 }
 ```
@@ -83,8 +97,8 @@ If you only know the user's email (no Hub `sub`), `identify({ email })` still wo
 ## Step 3 (optional) — Record business actions
 
 ```js
-DwsHub.track('report_exported', { format: 'xlsx' });
-DwsHub.track('order_submitted', { items: 3 });
+(window.DwsHub = window.DwsHub || []).push(['track', 'report_exported', { format: 'xlsx' }]);
+(window.DwsHub = window.DwsHub || []).push(['track', 'order_submitted', { items: 3 }]);
 ```
 
 Names: up to 80 characters (letters, numbers, `_ . : / -`). Properties: a small JSON object (≤ 2 KB).
@@ -111,18 +125,22 @@ Add these attributes to the `<script>` tag:
 
 | Call | Purpose |
 |---|---|
-| `DwsHub.identify({ id, email })` | Set the signed-in user (`id` = Hub user id / OIDC `sub`). |
-| `DwsHub.reset()` | Forget the user and start a new session (call on sign-out). |
+| `DwsHub.identify({ id, email })` | Set the signed-in user (`id` = Hub user id / OIDC `sub`). Idempotent: the same user again sends nothing. |
+| `DwsHub.reset()` | Forget the user, start a new session and a new anonymous browser id (call on sign-out). |
 | `DwsHub.track(name, properties?)` | Record a business action. |
 | `DwsHub.page(path?)` | Record a page view manually. |
 | `DwsHub.openBugReport()` | Open the bug-report dialog from your own button. |
 | `DwsHub.setBugButtonVisible(true \| false)` | Show or hide the floating button at runtime. |
+| `DwsHub.push([method, ...args])` | Same as calling the method. Works before the SDK loads (queued) and after. |
 
-Calling the SDK before the script has loaded? Queue calls instead:
+Every call can be made as `(window.DwsHub = window.DwsHub || []).push([method, ...args])`. Before the SDK has
+loaded the calls are queued, and replayed in order when it starts. After it has loaded, they run at once,
+including pushes onto an array your code captured earlier. Supported methods: `init`, `identify`, `reset`,
+`track`, `page`, `openBugReport`, `setBugButtonVisible`, `flush`. An unknown method logs a console warning.
 
-```html
-<script>window.DwsHub = window.DwsHub || []; DwsHub.push(['identify', { id: '…', email: '…' }]);</script>
-```
+**Console warnings** (shown without `data-debug`, once per page): the Hub refused the data (wrong key,
+origin not allowed, SDK switched off), the Hub could not be reached, an unknown command, and `identify`
+called without an id or email. Since SDK 1.2.0.
 
 ---
 
@@ -173,7 +191,8 @@ Still nothing? Add `data-debug="true"` to the script tag and open the browser co
 | `403 sdk_disabled` | An Admin switched the SDK off for this application. |
 | Console: `Refused to load the script` | Your CSP blocks the Hub domain — see *Requirements*. |
 | Console: `Mixed Content` | HTTPS app loading the HTTP staging Hub — use the matching environment. |
-| Data arrives but users show as anonymous | `DwsHub.identify(...)` is not being called after sign-in. |
+| Data arrives but users show as anonymous | `identify` is not reaching the SDK. Use the `push` form from Step 2, and call it when a stored session is restored, not only after the login callback. |
+| One user's activity is missing until they log in again | Same cause: the restored-session path does not identify. Their anonymous activity is attributed once they identify (up to 14 days back). |
 
 ---
 
