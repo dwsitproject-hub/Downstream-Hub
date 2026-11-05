@@ -206,12 +206,12 @@ export default function AppSdkModal({ app, onClose }) {
 
 const s = {
   muted: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  error: { padding: 'var(--space-2) var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
-  success: { padding: 'var(--space-2) var(--space-3)', background: '#DCFCE7', color: '#166534', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
+  error: { padding: 'var(--space-2) var(--space-3)', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
+  success: { padding: 'var(--space-2) var(--space-3)', background: 'var(--color-success-bg)', color: 'var(--color-success-fg)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
   status: { display: 'flex', flexWrap: 'wrap', gap: '4px var(--space-3)', alignItems: 'baseline', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', border: '1px solid transparent' },
-  statusLive: { background: '#DCFCE7', color: '#166534', borderColor: '#BBF7D0' },
+  statusLive: { background: 'var(--color-success-bg)', color: 'var(--color-success-fg)', borderColor: 'var(--color-success-border)' },
   statusIdle: { background: 'var(--color-bg-light)', color: 'var(--color-text-charcoal)', borderColor: 'var(--color-border-light)' },
-  statusNone: { background: '#FEF3C7', color: '#78350F', borderColor: '#FCD34D' },
+  statusNone: { background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)', borderColor: 'var(--color-warning-border)' },
   statusCounts: { marginLeft: 'auto', fontSize: 'var(--text-xs)', opacity: 0.85 },
   h4: { margin: 'var(--space-4) 0 var(--space-1)', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   help: { margin: '0 0 var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)', lineHeight: 1.6 },
@@ -220,6 +220,6 @@ const s = {
   copyBtn: { position: 'absolute', top: 8, right: 8, background: 'var(--color-bg-white)' },
   key: { fontFamily: 'Consolas, Menlo, monospace', fontSize: 12, background: 'var(--color-bg-light)', padding: '2px 6px', borderRadius: 4, color: 'var(--color-text-charcoal)', wordBreak: 'break-all' },
   toggle: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)', cursor: 'pointer' },
-  confirm: { padding: 'var(--space-3)', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', color: '#7F1D1D' },
+  confirm: { padding: 'var(--space-3)', background: 'var(--color-error-bg)', border: '1px solid var(--color-error-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', color: 'var(--color-error-fg)' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', width: '100%' },
 };

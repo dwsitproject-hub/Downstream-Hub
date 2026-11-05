@@ -7,8 +7,8 @@ const BADGE_CONFIG = {
     label: 'SSO',
     title: 'Signs you in through Downstream Hub',
     style: {
-      background: '#FDECEA',
-      color: 'var(--color-primary)',
+      background: 'var(--color-primary-soft)',
+      color: 'var(--color-link)',
     },
   },
   direct: {

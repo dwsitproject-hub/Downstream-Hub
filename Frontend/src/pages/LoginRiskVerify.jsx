@@ -100,8 +100,8 @@ const styles = {
   card: { background: 'var(--color-bg-white)', padding: 'var(--space-5)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', maxWidth: 460, width: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' },
   title: { margin: '0 0 var(--space-1)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   subtitle: { margin: 0, color: 'var(--color-text-steel)', fontSize: 'var(--text-small)' },
-  success: { padding: 'var(--space-2)', background: '#D1FAE5', color: 'var(--color-text-charcoal)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)' },
-  error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)' },
+  success: { padding: 'var(--space-2)', background: 'var(--color-success-bg)', color: 'var(--color-text-charcoal)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)' },
+  error: { padding: 'var(--space-2)', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)' },
   input: { padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)' },
   footer: { margin: 0, fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', textAlign: 'center' },
 };
