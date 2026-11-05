@@ -322,6 +322,6 @@ const s = {
   initials: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#A84335', color: '#fff', fontWeight: 700, fontSize: 10 },
   footer: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', justifyContent: 'flex-end' },
   hint: { marginRight: 'auto', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
-  warn: { color: '#B45309' },
+  warn: { color: 'var(--color-warning-fg)' },
   error: { color: 'var(--color-destructive)' },
 };

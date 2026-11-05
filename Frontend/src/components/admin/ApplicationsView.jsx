@@ -381,14 +381,14 @@ const s = {
   metaVal: { margin: 0, minWidth: 0, color: 'var(--color-text-charcoal)' },
   url: { color: 'var(--color-action-blue)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', fontSize: 'var(--text-small)' },
   code: { fontFamily: 'Consolas, Menlo, monospace', fontSize: 12, background: 'var(--color-bg-light)', padding: '1px 6px', borderRadius: 4 },
-  warn: { color: '#B45309', fontSize: 'var(--text-small)' },
+  warn: { color: 'var(--color-warning-fg)', fontSize: 'var(--text-small)' },
   cardFoot: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'auto', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--color-border-light)' },
   deleteBtn: { marginLeft: 'auto', background: 'none', border: 'none', padding: '3px var(--space-2)', color: 'var(--color-destructive)', fontSize: 'var(--text-xs)', cursor: 'pointer' },
 
   chipRow: { display: 'flex', flexWrap: 'wrap', gap: 4 },
-  chip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#E0ECFF', color: '#1D4ED8', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
+  chip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: 'var(--color-info-bg)', color: 'var(--color-info-fg)', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
   chipGlobal: { background: 'var(--color-bg-light)', color: 'var(--color-text-steel)' },
-  groupChip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: '#F3E8FF', color: '#6B21A8', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
+  groupChip: { display: 'inline-block', padding: '1px 8px', borderRadius: 999, background: 'var(--color-violet-bg)', color: 'var(--color-violet-fg)', fontSize: 'var(--text-xs)', fontWeight: 600, whiteSpace: 'nowrap' },
   groupSelect: { width: 'auto', minWidth: 160, maxWidth: 240 },
   initials: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#A84335', color: '#fff', fontWeight: 700, letterSpacing: '0.04em', fontFamily: 'var(--font-heading, system-ui, sans-serif)' },
 

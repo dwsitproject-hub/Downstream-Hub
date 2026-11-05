@@ -181,11 +181,11 @@ function ShareBar({ value, max, color = 'var(--color-action-blue)' }) {
 
 function Pill({ tone, children }) {
   const tones = {
-    green: { background: '#DCFCE7', color: '#166534' },
+    green: { background: 'var(--color-success-bg)', color: 'var(--color-success-fg)' },
     grey: { background: 'var(--color-bg-light)', color: 'var(--color-text-steel)' },
-    red: { background: '#FEE2E2', color: '#B91C1C' },
-    blue: { background: '#E0ECFF', color: '#1D4ED8' },
-    amber: { background: '#FEF3C7', color: '#92400E' },
+    red: { background: 'var(--color-error-bg)', color: 'var(--color-error-fg)' },
+    blue: { background: 'var(--color-info-bg)', color: 'var(--color-info-fg)' },
+    amber: { background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)' },
   };
   return <span style={{ ...s.pill, ...(tones[tone] || tones.grey) }}>{children}</span>;
 }
@@ -817,7 +817,7 @@ function BugSection({ scope, reloadKey, onOpen, onChanged, focusSignal, onSelect
                 <td style={s.td}>
                   <div style={s.clamp}>{b.message}</div>
                   {b.sentinel_status === 'done' && b.sentinel_summary
-                    ? <div style={{ ...s.subtle, color: '#3730A3' }}>Sentinel: {b.sentinel_summary}</div>
+                    ? <div style={{ ...s.subtle, color: 'var(--color-info-fg)' }}>Sentinel: {b.sentinel_summary}</div>
                     : b.page_url && <div style={s.subtle}>{b.page_url}</div>}
                 </td>
                 <td style={s.td}>
@@ -899,7 +899,7 @@ function OverviewView({ days, reloadKey, open, onSelectScope, onLoaded, onBugsCh
     { key: 'users', label: 'Active users', value: fmtNum(sum('active_users')), caption: 'Summed per application', cta: 'Rank by users →', accent: '#0891B2', onClick: () => sortBy('active_users') },
     { key: 'time', label: 'Time in apps', value: fmtMinutes(sum('minutes')), caption: 'On-screen time, all apps', cta: 'Rank by time →', accent: '#D97706', onClick: () => sortBy('minutes') },
     { key: 'pages', label: 'Page views', value: fmtNum(sum('page_views')), caption: 'Across all apps', cta: 'Rank by page views →', accent: '#7C3AED', onClick: () => sortBy('page_views') },
-    { key: 'errors', label: 'JS errors', value: fmtNum(sum('errors')), caption: 'Auto-captured in this period', cta: 'Rank by errors →', accent: '#B91C1C', danger: sum('errors') > 0, onClick: () => sortBy('errors') },
+    { key: 'errors', label: 'JS errors', value: fmtNum(sum('errors')), caption: 'Auto-captured in this period', cta: 'Rank by errors →', accent: 'var(--color-error-fg)', danger: sum('errors') > 0, onClick: () => sortBy('errors') },
     { key: 'bugs', label: 'Open bug reports', value: fmtNum(openBugs), caption: 'All apps + the Hub', cta: 'Review →', accent: 'var(--color-brand-red)', danger: openBugs > 0, onClick: () => setBugFocus((n) => n + 1) },
   ];
 
@@ -1345,8 +1345,8 @@ const s = {
   title: { margin: 0, fontSize: 'var(--text-h2)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   subtitle: { margin: 'var(--space-1) 0 0', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
   updated: { color: 'var(--color-text-steel)', opacity: 0.8 },
-  error: { padding: 'var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
-  banner: { padding: 'var(--space-3) var(--space-4)', background: '#FEF3C7', color: '#78350F', border: '1px solid #FCD34D', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', lineHeight: 1.6 },
+  error: { padding: 'var(--space-3)', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
+  banner: { padding: 'var(--space-3) var(--space-4)', background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)', border: '1px solid var(--color-warning-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', lineHeight: 1.6 },
   muted: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)', margin: 0 },
   empty: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)', margin: 'var(--space-3) 0' },
   caption: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)', margin: '0 0 var(--space-3)' },

@@ -1,33 +1,95 @@
 /**
  * KPN Downstream Design System — CSS custom properties
- * Source: design-tokens.json — industrial clarity, red as accent.
+ * Direction B ("mission control"): brand red + the logo's amber/magenta gradient,
+ * Merriweather display over Inter body. Two themes:
+ *   :root                     → light (default)
+ *   :root[data-theme='dark']  → dark
+ * The theme attribute is set before first paint by the inline script in index.html
+ * and kept in sync by ThemeContext.
  */
 :root {
-  /* Color — primitive */
+  color-scheme: light;
+
+  /* Brand — identical in both themes */
   --color-brand-red: #C43A31;
   --color-brand-red-deep: #9E2C25;
-  --color-text-charcoal: #2B2B2B;
-  --color-text-steel: #6B6B6B;
+  --color-brand-amber: #F5A623;
+  --color-brand-orange: #E8743A;
+  --color-brand-magenta: #D9314F;
+  --hub-gradient: linear-gradient(100deg, #F5A623 0%, #E8743A 45%, #D9314F 100%);
+  --hub-gradient-primary: linear-gradient(135deg, #D23F35, #9E2C25);
+
+  /* Surfaces & text (names kept for backward compatibility) */
+  --color-text-charcoal: #1B1C20;
+  --color-text-steel: #5C5E66;
+  --color-text-muted: #6B6D75;
   --color-text-white: #FFFFFF;
-  --color-bg-white: #FFFFFF;
-  --color-bg-light: #F4F4F4;
-  --color-bg-lighter: #FAFAFA;
-  --color-border-light: #E0E0E0;
-  --color-border-medium: #C4C4C4;
-  --color-border-dark: #9E9E9E;
+  --color-bg-white: #FFFFFF;        /* card / surface */
+  --color-bg-light: #F4F3F0;        /* page */
+  --color-bg-lighter: #FAF9F7;      /* subtle fill */
+  --color-border-light: #E6E3DE;
+  --color-border-medium: #CFCAC3;
+  --color-border-dark: #A29D96;
   --color-action-blue: #2563EB;
   --color-action-blue-deep: #1D4ED8;
   --color-action-blue-hover-bg: #EFF6FF;
+  --color-link: #B3342C;
+  --color-link-hover: #8A2620;
 
-  /* Color — semantic */
+  /* Semantic */
   --color-primary: var(--color-brand-red);
   --color-primary-foreground: var(--color-text-white);
   --color-primary-hover: var(--color-brand-red-deep);
+  --color-primary-soft: #FBE7E5;
   --color-secondary: var(--color-bg-light);
   --color-secondary-foreground: var(--color-text-charcoal);
-  --color-secondary-hover: #E8E8E8;
+  --color-secondary-hover: #EFEDE9;
   --color-destructive: var(--color-brand-red);
   --color-destructive-foreground: var(--color-text-white);
+  --color-accent: #B45309;          /* amber that passes contrast as text on light */
+  --color-accent-strong: #F5A623;   /* amber for fills, dots, glows */
+
+  --color-error-bg: #FDE8E6;
+  --color-error-fg: #A3261E;
+  --color-error-border: #F6C3BE;
+  --color-success-bg: #DFF5EC;
+  --color-success-fg: #11613F;
+  --color-success-border: #A9E2C8;
+  --color-warning-bg: #FEF1D8;
+  --color-warning-fg: #8A4B06;
+  --color-warning-border: #F7CF84;
+  --color-info-bg: #E6EEFF;
+  --color-info-fg: #2546A6;
+  --color-info-border: #C3D3FB;
+  --color-violet-bg: #F1E8FE;
+  --color-violet-fg: #6B21A8;
+
+  /* Direction B — atmosphere */
+  --hub-page-bg: #F4F3F0;
+  --hub-grid-line: rgba(27, 28, 32, 0.045);
+  --hub-glow-red: rgba(196, 58, 49, 0.12);
+  --hub-glow-amber: rgba(245, 166, 35, 0.14);
+  --hub-glass: rgba(255, 255, 255, 0.72);
+  --hub-glass-hover: rgba(255, 255, 255, 0.95);
+  --hub-glass-border: rgba(27, 28, 32, 0.08);
+  --hub-glass-border-strong: rgba(27, 28, 32, 0.14);
+  --hub-card: #FFFFFF;
+  --hub-card-hover-border: rgba(232, 116, 58, 0.55);
+  --hub-card-hover-shadow: 0 18px 40px -20px rgba(196, 58, 49, 0.35);
+  --hub-ring: rgba(27, 28, 32, 0.12);
+  --hub-ring-accent: rgba(232, 116, 58, 0.55);
+  --hub-core-bg: #FFFFFF;
+  --hub-tab-active-bg: rgba(196, 58, 49, 0.10);
+  --hub-tab-active-border: rgba(196, 58, 49, 0.45);
+  --hub-tab-active-fg: #8A2620;
+  --hub-focus: #C43A31;
+  --hub-overlay: rgba(255, 255, 255, 0.92);
+  --hub-tile-ops: linear-gradient(135deg, #D23F35, #9E2C25);
+  --hub-tile-com: linear-gradient(135deg, #B45F0A, #7A3E05);
+  --hub-tile-ppl: linear-gradient(135deg, #0F7F76, #0A4F4A);
+  --hub-tile-it: linear-gradient(135deg, #4A6FB0, #2C4570);
+  --hub-tile-violet: linear-gradient(135deg, #7A4CC2, #4C2A85);
+  --hub-tile-slate: linear-gradient(135deg, #5B6170, #363A45);
 
   /* Typography */
   --font-primary: 'Inter', system-ui, -apple-system, sans-serif;
@@ -54,20 +116,82 @@
   --space-7: 64px;
 
   /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
 
   /* Elevation */
   --shadow-none: none;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 4px 0 rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 4px 8px 0 rgba(0, 0, 0, 0.10);
+  --shadow-md: 0 6px 18px -8px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 18px 40px -16px rgba(0, 0, 0, 0.22);
 
   /* Animation */
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --duration-slow: 250ms;
   --easing-default: ease-out;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-text-charcoal: #F2F2F4;
+  --color-text-steel: #A3A5AD;
+  --color-text-muted: #8B8D96;
+  --color-bg-white: #121318;
+  --color-bg-light: #08090C;
+  --color-bg-lighter: #171920;
+  --color-border-light: #23252C;
+  --color-border-medium: #33363F;
+  --color-border-dark: #4A4D57;
+  --color-action-blue: #8EB1FF;
+  --color-action-blue-deep: #B8CDFF;
+  --color-action-blue-hover-bg: rgba(122, 162, 247, 0.12);
+  --color-link: #FF8A5C;
+  --color-link-hover: #FFB48F;
+
+  --color-primary-soft: rgba(196, 58, 49, 0.18);
+  --color-secondary-hover: #1C1E25;
+  --color-accent: #F5A623;
+
+  --color-error-bg: rgba(255, 122, 110, 0.14);
+  --color-error-fg: #FFB3AB;
+  --color-error-border: rgba(255, 122, 110, 0.35);
+  --color-success-bg: rgba(45, 212, 191, 0.12);
+  --color-success-fg: #9FE8DD;
+  --color-success-border: rgba(45, 212, 191, 0.35);
+  --color-warning-bg: rgba(245, 166, 35, 0.14);
+  --color-warning-fg: #FFD49A;
+  --color-warning-border: rgba(245, 166, 35, 0.4);
+  --color-info-bg: rgba(122, 162, 247, 0.14);
+  --color-info-fg: #B8CDFF;
+  --color-info-border: rgba(122, 162, 247, 0.35);
+  --color-violet-bg: rgba(167, 139, 250, 0.14);
+  --color-violet-fg: #D3C4FF;
+
+  --hub-page-bg: #08090C;
+  --hub-grid-line: rgba(255, 255, 255, 0.035);
+  --hub-glow-red: rgba(196, 58, 49, 0.26);
+  --hub-glow-amber: rgba(245, 166, 35, 0.15);
+  --hub-glass: rgba(255, 255, 255, 0.04);
+  --hub-glass-hover: rgba(255, 255, 255, 0.08);
+  --hub-glass-border: rgba(255, 255, 255, 0.08);
+  --hub-glass-border-strong: rgba(255, 255, 255, 0.14);
+  --hub-card: #111318;
+  --hub-card-hover-border: rgba(232, 116, 58, 0.45);
+  --hub-card-hover-shadow: 0 18px 40px -18px rgba(196, 58, 49, 0.55);
+  --hub-ring: rgba(255, 255, 255, 0.10);
+  --hub-ring-accent: rgba(245, 166, 35, 0.75);
+  --hub-core-bg: #121318;
+  --hub-tab-active-bg: rgba(196, 58, 49, 0.20);
+  --hub-tab-active-border: rgba(245, 166, 35, 0.6);
+  --hub-tab-active-fg: #FFFFFF;
+  --hub-focus: #F5A623;
+  --hub-overlay: rgba(18, 19, 24, 0.9);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 22px -10px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 24px 50px -20px rgba(0, 0, 0, 0.8);
 }
