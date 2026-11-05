@@ -145,10 +145,9 @@ export default function HubIdentify({ hubUserId, email }: { hubUserId?: string |
   useEffect(() => {
     if (!hubUserId && !email) return;
     const user = { id: hubUserId ?? undefined, email: email ?? undefined };
-    // The SDK loads with `defer` and may not be ready yet: queue the call, the SDK replays it on load.
-    const hub = (window.DwsHub = window.DwsHub || []);
-    if (typeof hub.identify === 'function') hub.identify(user);
-    else hub.push(['identify', user]);
+    // The SDK loads with `defer` and may not be ready yet. push() queues the call until it loads
+    // and runs it at once afterwards (SDK 1.2.0+), so this one line covers both.
+    (window.DwsHub = window.DwsHub || []).push(['identify', user]);
   }, [hubUserId, email]);
   return null;
 }
@@ -167,18 +166,18 @@ const user = await getCurrentUser();          // however KLIP reads its session 
 Call `reset` **before** redirecting to KLIP's logout, so the next person on the same browser starts clean:
 
 ```ts
-window.DwsHub?.reset();
+(window.DwsHub = window.DwsHub || []).push(['reset']);
 window.location.href = '/auth/logout';
 ```
 
-Pages viewed before `identify` in the same session (e.g. the login screen) are attributed to the user automatically once `identify` runs.
+Pages viewed before `identify` in the same browser (the login screen, or a visit where `identify` was missed) are attributed to the user once `identify` runs, back to the previous person who signed in on that browser and at most 14 days.
 
 ### 4c. "Report a bug" entry point
 
 Because KLIP hides the floating button (`data-bug-button="false"`), add a menu item — for example under the user menu or Help:
 
 ```tsx
-<button type="button" onClick={() => window.DwsHub?.openBugReport()}>Report a bug</button>
+<button type="button" onClick={() => (window.DwsHub = window.DwsHub || []).push(['openBugReport'])}>Report a bug</button>
 ```
 
 Without it, users have no way to send reports (JS errors are still captured automatically).
@@ -190,9 +189,10 @@ Without it, users have no way to send reports (JS errors are still captured auto
 Page views come for free. For business actions the KLIP product owner cares about, add one line where the action succeeds:
 
 ```js
-window.DwsHub?.track('contract_viewed', { contract_type: 'term' });
-window.DwsHub?.track('report_exported', { report: 'shipment_status', format: 'xlsx' });
-window.DwsHub?.track('sap_import_started');
+const hub = (...call) => (window.DwsHub = window.DwsHub || []).push(call);
+hub('track', 'contract_viewed', { contract_type: 'term' });
+hub('track', 'report_exported', { report: 'shipment_status', format: 'xlsx' });
+hub('track', 'sap_import_started');
 ```
 
 Rules:
@@ -322,7 +322,7 @@ curl -s http://klip.kpndomain.com/ | grep -oE '<script[^>]*hub-sdk[^>]*>' | sed 
 | `DwsHub.openBugReport()` | Open the bug-report dialog from KLIP's own button |
 | `DwsHub.setBugButtonVisible(bool)` | Show or hide the floating button |
 
-Always guard calls with `window.DwsHub?.` so KLIP keeps working if the Hub is unreachable. The SDK never blocks or breaks the host page.
+Make every call through `(window.DwsHub = window.DwsHub || []).push([method, ...args])`. It never throws, it queues calls made before the SDK has loaded, and it keeps KLIP working if the Hub is unreachable. Do not use `window.DwsHub?.identify(...)`: before the SDK loads it silently skips the call, and the user stays anonymous until they log in again. The SDK never blocks or breaks the host page.
 
 **Security notes for KLIP reviewers:**
 - The identity KLIP reports is for analytics only. Nothing in the Hub grants access based on it.

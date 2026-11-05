@@ -69,19 +69,66 @@ async function resolveUser(db, { id, email }) {
  *   | { type: 'heartbeat' } | { type: 'error', message, stack, path, breadcrumbs }
  * Returns the bug reports created for errors (Sentinel picks them up).
  */
+/** How far back an identify() reaches for this browser's anonymous sessions. */
+const ANON_BACKFILL_DAYS = 14;
+
+/**
+ * Attribute this browser's earlier ANONYMOUS sessions (same app, same anonymous id) to the
+ * user who just identified. The cases: the app restored a signed-in user without calling
+ * identify(), the call was lost, or the tab predates the SDK. Their activity is real and was
+ * theirs. Bounded on both sides: the last ANON_BACKFILL_DAYS, and nothing older than the
+ * last session of a DIFFERENT person in this browser (a shared PC).
+ */
+async function attributeAnonymousSessions(db, { appId, anonymousId, user }) {
+  const { rows } = await db.query(
+    `UPDATE app_sessions a SET user_id = $3, user_email = $4
+     WHERE a.application_id = $1 AND a.anonymous_id = $2
+       AND a.user_id IS NULL AND a.user_email IS NULL
+       AND a.started_at >= now() - make_interval(days => $5::int)
+       AND a.started_at > COALESCE((
+         SELECT MAX(o.started_at) FROM app_sessions o
+         WHERE o.application_id = $1 AND o.anonymous_id = $2
+           AND (o.user_id IS NOT NULL OR o.user_email IS NOT NULL)
+           AND COALESCE(o.user_id::text, o.user_email) IS DISTINCT FROM $6::text
+       ), '-infinity'::timestamptz)
+     RETURNING a.session_key`,
+    [appId, anonymousId, user.userId, user.email, ANON_BACKFILL_DAYS, String(user.userId || user.email)]
+  );
+  if (rows.length === 0) return 0;
+  await db.query(
+    `UPDATE app_events SET user_id = $3, user_email = $4
+     WHERE application_id = $1 AND session_key = ANY($2::text[]) AND user_id IS NULL AND user_email IS NULL`,
+    [appId, rows.map((r) => r.session_key), user.userId, user.email]
+  );
+  return rows.length;
+}
+
 async function recordBatch(db, { app, sessionKey, anonymousId, user, userAgent, ip, release, events }) {
   const pageViews = events.filter((e) => e.type === 'page_view');
-  await db.query(
-    `INSERT INTO app_sessions (application_id, session_key, user_id, user_email, anonymous_id, page_views, user_agent, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (application_id, session_key) DO UPDATE SET
-       last_seen_at = now(),
-       page_views   = app_sessions.page_views + EXCLUDED.page_views,
-       user_id      = COALESCE(EXCLUDED.user_id, app_sessions.user_id),
-       user_email   = COALESCE(EXCLUDED.user_email, app_sessions.user_email),
-       anonymous_id = COALESCE(app_sessions.anonymous_id, EXCLUDED.anonymous_id)`,
+  // `prev` reads the row as it was before this upsert (same snapshot), so we know whether
+  // this batch is the moment the session became known.
+  const { rows: [upserted] } = await db.query(
+    `WITH prev AS (
+       SELECT (user_id IS NOT NULL OR user_email IS NOT NULL) AS known
+       FROM app_sessions WHERE application_id = $1 AND session_key = $2
+     ), up AS (
+       INSERT INTO app_sessions (application_id, session_key, user_id, user_email, anonymous_id, page_views, user_agent, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (application_id, session_key) DO UPDATE SET
+         last_seen_at = now(),
+         page_views   = app_sessions.page_views + EXCLUDED.page_views,
+         user_id      = COALESCE(EXCLUDED.user_id, app_sessions.user_id),
+         user_email   = COALESCE(EXCLUDED.user_email, app_sessions.user_email),
+         anonymous_id = COALESCE(app_sessions.anonymous_id, EXCLUDED.anonymous_id)
+       RETURNING 1
+     )
+     SELECT COALESCE((SELECT known FROM prev), false) AS was_known FROM up`,
     [app.id, sessionKey, user.userId, user.email, anonymousId, pageViews.length, userAgent, ip]
   );
+
+  if ((user.userId || user.email) && anonymousId && !(upserted && upserted.was_known)) {
+    await attributeAnonymousSessions(db, { appId: app.id, anonymousId, user });
+  }
 
   // Pages seen before the app called identify() (e.g. the login screen) belong to the
   // same browser session, so attribute them to the user once we know who it is.
