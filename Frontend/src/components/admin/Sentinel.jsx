@@ -101,11 +101,11 @@ export function SentinelMark({ size = 18 }) {
 
 function Pill({ tone = 'grey', children, title }) {
   const tones = {
-    green: { background: '#DCFCE7', color: '#166534' },
+    green: { background: 'var(--color-success-bg)', color: 'var(--color-success-fg)' },
     grey: { background: 'var(--color-bg-light)', color: 'var(--color-text-steel)' },
-    red: { background: '#FEE2E2', color: '#B91C1C' },
-    blue: { background: '#E0E7FF', color: '#3730A3' },
-    amber: { background: '#FEF3C7', color: '#92400E' },
+    red: { background: 'var(--color-error-bg)', color: 'var(--color-error-fg)' },
+    blue: { background: 'var(--color-info-bg)', color: 'var(--color-info-fg)' },
+    amber: { background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)' },
   };
   return <span title={title} style={{ ...s.pill, ...(tones[tone] || tones.grey) }}>{children}</span>;
 }
@@ -408,7 +408,7 @@ function HealthResult({ run }) {
             <div key={i} style={s.metric}>
               <div style={s.metricLabel}>{m.label}</div>
               <div style={s.metricValue}>{m.value}</div>
-              {m.change && <div style={{ ...s.metricChange, color: m.direction === 'better' ? '#166534' : m.direction === 'worse' ? '#B91C1C' : 'var(--color-text-steel)' }}>{m.change}</div>}
+              {m.change && <div style={{ ...s.metricChange, color: m.direction === 'better' ? 'var(--color-success-fg)' : m.direction === 'worse' ? 'var(--color-error-fg)' : 'var(--color-text-steel)' }}>{m.change}</div>}
             </div>
           ))}
         </div>
@@ -568,7 +568,7 @@ export function SentinelCard({ scope, scopeName, days }) {
             AI production support for {scopeName}: root-causes bugs automatically, reports on health, answers questions.
             {' '}{config?.repo
               ? <>Reads code from <code style={s.code}>{config.repo}@{config.branch}</code>.</>
-              : <span style={{ color: '#92400E' }}>No repository connected — analyses use runtime evidence only.</span>}
+              : <span style={{ color: 'var(--color-warning-fg)' }}>No repository connected — analyses use runtime evidence only.</span>}
           </div>
         </div>
         <div style={s.actions}>
@@ -752,7 +752,7 @@ function SentinelSettingsModal({ scope, scopeName, githubToken, onClose, onSaved
             <button type="button" className="btn-secondary btn-compact" onClick={runTest} disabled={testing || !form.repo.trim()}>
               {testing ? 'Checking…' : 'Test repository access'}
             </button>
-            {test?.ok && <span style={{ color: '#166534', fontSize: 'var(--text-small)' }}>✓ Can read {test.repo} @ {test.branch} ({String(test.commit).slice(0, 7)}{test.private ? ', private' : ''})</span>}
+            {test?.ok && <span style={{ color: 'var(--color-success-fg)', fontSize: 'var(--text-small)' }}>✓ Can read {test.repo} @ {test.branch} ({String(test.commit).slice(0, 7)}{test.private ? ', private' : ''})</span>}
             {test && !test.ok && <span style={{ color: 'var(--color-destructive)', fontSize: 'var(--text-small)' }}>{test.error}</span>}
           </div>
           {!githubToken && (
@@ -779,7 +779,7 @@ function SentinelSettingsModal({ scope, scopeName, githubToken, onClose, onSaved
 /* ---------- styles ---------- */
 
 const s = {
-  card: { background: 'linear-gradient(180deg, #EEF2FF 0%, var(--color-bg-white) 90px)', border: '1px solid #C7D2FE', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', minWidth: 0 },
+  card: { background: 'linear-gradient(180deg, var(--color-info-bg) 0%, var(--color-bg-white) 90px)', border: '1px solid var(--color-info-border)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', minWidth: 0 },
   cardHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', flexWrap: 'wrap' },
   title: { display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
   sub: { fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', marginTop: 4, maxWidth: 760 },
@@ -794,7 +794,7 @@ const s = {
   recent: { listStyle: 'none', margin: 'var(--space-2) 0 0', padding: 0, display: 'grid', gap: 4, fontSize: 'var(--text-small)' },
   recentBtn: { textAlign: 'left' },
 
-  box: { marginTop: 'var(--space-4)', border: '1px solid #C7D2FE', background: '#F8FAFF', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)' },
+  box: { marginTop: 'var(--space-4)', border: '1px solid var(--color-info-border)', background: 'var(--color-info-bg)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)' },
   boxHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' },
   summary: { fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--text-base)', color: 'var(--color-text-charcoal)', margin: 'var(--space-1) 0 var(--space-2)', lineHeight: 1.4 },
   pillRow: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 'var(--space-2)' },
@@ -810,9 +810,9 @@ const s = {
   code: { fontFamily: 'Consolas, Menlo, monospace', fontSize: 12, background: 'var(--color-bg-light)', padding: '1px 6px', borderRadius: 4, wordBreak: 'break-all' },
   meta: { marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--color-text-steel)' },
   muted: { color: 'var(--color-text-steel)', fontSize: 'var(--text-small)', margin: 0 },
-  note: { padding: '8px 12px', background: '#FEF3C7', color: '#78350F', border: '1px solid #FCD34D', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
-  error: { padding: '8px 12px', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
-  working: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#EEF2FF', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', color: '#3730A3' },
+  note: { padding: '8px 12px', background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)', border: '1px solid var(--color-warning-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
+  error: { padding: '8px 12px', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)' },
+  working: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--color-info-bg)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-small)', color: 'var(--color-info-fg)' },
   pulse: { width: 10, height: 10, borderRadius: '50%', background: '#4F46E5', flexShrink: 0 },
   item: { borderLeft: '3px solid var(--color-border-light)', padding: '2px 0 2px 10px', marginBottom: 'var(--space-2)' },
   itemHead: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 2, fontSize: 'var(--text-small)' },

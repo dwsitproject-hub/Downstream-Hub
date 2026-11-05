@@ -151,6 +151,6 @@ const styles = {
   input: { marginTop: 'var(--space-1)' },
   hint: { display: 'block', marginTop: 'var(--space-1)', fontSize: 'var(--text-xs)', fontWeight: 'var(--font-weight-normal)', color: 'var(--color-text-steel)' },
   button: { width: '100%', marginTop: 'var(--space-1)' },
-  error: { padding: 'var(--space-2)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
+  error: { padding: 'var(--space-2)', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-small)', marginBottom: 'var(--space-3)' },
   footer: { marginTop: 'var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', textAlign: 'center' },
 };

@@ -9,16 +9,18 @@ import AdminModal from '../components/admin/AdminModal';
 import AdminFormModal from '../components/admin/AdminFormModal';
 import AnalyticsPanel from '../components/admin/AnalyticsPanel';
 import ApplicationsView from '../components/admin/ApplicationsView';
-import HubLogo from '../components/HubLogo';
+import ThemeToggle from '../components/ThemeToggle';
+import { Icon } from '../components/HubIcons';
 
 const SECTIONS = [
-  { id: 'domains', label: 'Domains', path: 'domains' },
-  { id: 'business-units', label: 'Departments', path: 'business-units' },
-  { id: 'users', label: 'Users', path: 'users' },
-  { id: 'applications', label: 'Applications', path: 'applications' },
-  { id: 'analytics', label: 'Analytic', path: 'analytics' },
-  { id: 'password-policy', label: 'Password policy', path: 'password-policy' },
+  { id: 'applications', label: 'Applications', path: 'applications', group: 'Catalogue', icon: 'grid' },
+  { id: 'users', label: 'Users', path: 'users', group: 'People & access', icon: 'users' },
+  { id: 'business-units', label: 'Departments', path: 'business-units', group: 'People & access', icon: 'building' },
+  { id: 'domains', label: 'Domains', path: 'domains', group: 'People & access', icon: 'globe' },
+  { id: 'password-policy', label: 'Password policy', path: 'password-policy', group: 'People & access', icon: 'lock' },
+  { id: 'analytics', label: 'Analytic', path: 'analytics', group: 'Insight', icon: 'chart' },
 ];
+const SECTION_GROUPS = [...new Set(SECTIONS.map((s) => s.group))];
 
 /** IANA timezones for login MFA calendar-day bypass (Admin dropdown). */
 const LOGIN_MFA_BYPASS_TIMEZONES = [
@@ -716,7 +718,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (user?.role !== 'Admin') return;
-    if (!activeSection) navigate('/admin/domains', { replace: true });
+    if (!activeSection) navigate('/admin/applications', { replace: true });
   }, [user?.role, activeSection, navigate]);
 
   if (user?.role !== 'Admin') {
@@ -729,25 +731,49 @@ export default function Admin() {
   }
 
   return (
-    <div style={styles.page} className="admin-page">
+    <div style={styles.page} className="admin-page hub-backdrop">
       <header style={styles.header}>
-        <HubLogo title="Admin — Downstream Hub" titleStyle={styles.title} iconSize={36} />
+        <Link to="/" style={styles.brand} aria-label="Downstream Hub dashboard">
+          <img src="/logo.png" alt="" width={32} height={32} style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 10px rgba(232,116,58,0.55))' }} />
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+            <span style={styles.title}>Downstream Hub</span>
+            <span style={styles.titleTag}>Control room</span>
+          </span>
+        </Link>
         <div style={styles.userRow}>
-          <Link to="/" style={styles.backLink}>Dashboard</Link>
-          <span style={styles.userEmail}>{user?.email}</span>
-          <button type="button" onClick={logout} className="btn-secondary" style={styles.logoutBtn}>Sign out</button>
+          <span className="hub-hide-sm" style={styles.userEmail}>{user?.email}</span>
+          <ThemeToggle />
+          <Link to="/" className="hub-icon-btn">
+            <Icon name="arrowLeft" size={17} />
+            <span className="hub-hide-sm">Dashboard</span>
+          </Link>
+          <button type="button" onClick={logout} className="hub-icon-btn" aria-label="Sign out">
+            <Icon name="logout" size={17} />
+            <span className="hub-hide-sm">Sign out</span>
+          </button>
         </div>
       </header>
       <div style={styles.layout}>
-        <nav style={styles.sidebar}>
-          {SECTIONS.map((s) => (
-            <Link
-              key={s.id}
-              to={`/admin/${s.path}`}
-              style={activeSection === s.path ? styles.sidebarLinkActive : styles.sidebarLink}
-            >
-              {s.label}
-            </Link>
+        <nav style={styles.sidebar} aria-label="Admin sections">
+          {SECTION_GROUPS.map((group) => (
+            <div key={group} style={styles.navGroup}>
+              <span className="hub-label" style={{ padding: '0 12px 6px' }}>{group}</span>
+              {SECTIONS.filter((s) => s.group === group).map((s) => {
+                const active = activeSection === s.path;
+                return (
+                  <Link
+                    key={s.id}
+                    to={`/admin/${s.path}`}
+                    className={active ? undefined : 'hub-nav-item'}
+                    aria-current={active ? 'page' : undefined}
+                    style={active ? styles.sidebarLinkActive : styles.sidebarLink}
+                  >
+                    <Icon name={s.icon} size={18} style={active ? { color: 'var(--color-accent)' } : undefined} />
+                    {s.label}
+                  </Link>
+                );
+              })}
+            </div>
           ))}
         </nav>
         <main style={activeSection === 'analytics' || activeSection === 'applications' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
@@ -956,7 +982,7 @@ export default function Admin() {
                     <td style={styles.tableCell}>
                       {u.email}
                       {u.is_active === false && (
-                        <span style={{ marginLeft: 8, display: 'inline-block', padding: '1px 8px', borderRadius: '999px', background: '#FEF3C7', color: '#92400E', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+                        <span style={{ marginLeft: 8, display: 'inline-block', padding: '1px 8px', borderRadius: '999px', background: 'var(--color-warning-bg)', color: 'var(--color-warning-fg)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
                           Pending activation
                         </span>
                       )}
@@ -1426,20 +1452,21 @@ export default function Admin() {
 }
 
 const styles = {
-  page: { minHeight: '100vh', background: 'var(--color-bg-light)', display: 'flex', flexDirection: 'column' },
-  header: { background: 'var(--color-bg-white)', padding: 'var(--space-3) var(--space-4)', boxShadow: 'var(--shadow-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  title: { margin: 0, fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
-  userRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)' },
-  backLink: { color: 'var(--color-primary)', textDecoration: 'none', fontSize: 'var(--text-small)' },
-  userEmail: { fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
-  logoutBtn: {},
+  page: { height: '100vh', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  header: { flexShrink: 0, padding: '0 var(--space-4)', height: 72, borderBottom: '1px solid var(--hub-glass-border)', background: 'var(--hub-glass)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' },
+  brand: { display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'var(--color-text-charcoal)' },
+  title: { margin: 0, fontSize: 17, fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text-charcoal)' },
+  titleTag: { fontSize: 11, fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--color-accent)' },
+  userRow: { display: 'flex', alignItems: 'center', gap: 4 },
+  userEmail: { fontSize: 'var(--text-small)', color: 'var(--color-text-steel)', marginRight: 8 },
   layout: { display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' },
-  sidebar: { width: 200, flexShrink: 0, minHeight: 0, overflowY: 'auto', background: 'var(--color-bg-white)', borderRight: '1px solid var(--color-border-light)', padding: 'var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' },
-  sidebarLink: { padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-md)', color: 'var(--color-text-charcoal)', textDecoration: 'none', fontSize: 'var(--text-small)', transition: 'background var(--duration-fast)' },
-  sidebarLinkActive: { padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--color-primary)', color: 'var(--color-primary-foreground)', textDecoration: 'none', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-medium)' },
-  main: { flex: 1, maxWidth: 900, margin: 0, padding: 'var(--space-4)', overflow: 'auto' },
-  error: { padding: 'var(--space-3)', background: '#FEE2E2', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
-  success: { padding: 'var(--space-3)', background: '#DCFCE7', color: '#166534', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
+  sidebar: { width: 248, flexShrink: 0, minHeight: 0, overflowY: 'auto', background: 'var(--hub-glass)', borderRight: '1px solid var(--hub-glass-border)', padding: 'var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 18 },
+  navGroup: { display: 'flex', flexDirection: 'column', gap: 2 },
+  sidebarLink: { display: 'flex', alignItems: 'center', gap: 12, height: 44, padding: '0 12px', borderRadius: 12, border: '1px solid transparent', color: 'var(--color-text-steel)', textDecoration: 'none', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-medium)' },
+  sidebarLinkActive: { display: 'flex', alignItems: 'center', gap: 12, height: 44, padding: '0 12px', borderRadius: 12, background: 'linear-gradient(90deg, var(--hub-tab-active-bg), transparent)', border: '1px solid var(--hub-tab-active-border)', boxShadow: '0 0 24px -10px rgba(232,116,58,0.6)', color: 'var(--color-text-charcoal)', textDecoration: 'none', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-semibold)' },
+  main: { flex: 1, maxWidth: 960, margin: 0, padding: 'var(--space-5) var(--space-5) var(--space-6)', overflow: 'auto' },
+  error: { padding: 'var(--space-3)', background: 'var(--color-error-bg)', color: 'var(--color-destructive)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
+  success: { padding: 'var(--space-3)', background: 'var(--color-success-bg)', color: 'var(--color-success-fg)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)', fontSize: 'var(--text-small)' },
   toolbar: { marginBottom: 'var(--space-4)', position: 'relative', zIndex: 1 },
   primaryBtn: {},
   form: { background: 'var(--color-bg-white)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', boxShadow: 'var(--shadow-md)' },
@@ -1449,12 +1476,12 @@ const styles = {
   modalTextarea: { display: 'block', width: '100%', maxWidth: '100%', padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)', border: '1px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)', resize: 'vertical', fontFamily: 'inherit' },
   modalFooterActions: { display: 'flex', gap: 'var(--space-2)' },
   formActions: { display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' },
-  table: { width: '100%', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-md)', borderCollapse: 'collapse', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-light)' },
-  tableHeader: { borderBottom: '1px solid var(--color-border-light)', padding: 'var(--space-2) var(--space-3)', textAlign: 'left', fontWeight: 'var(--font-weight-medium)', fontSize: 'var(--text-small)', color: 'var(--color-text-charcoal)' },
-  tableCell: { padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)' },
-  actionsCell: { padding: 'var(--space-2) var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)', display: 'flex', flexDirection: 'row', gap: 'var(--space-1)', alignItems: 'center', flexWrap: 'nowrap' },
+  table: { width: '100%', background: 'var(--hub-card)', borderRadius: 'var(--radius-lg)', borderCollapse: 'separate', borderSpacing: 0, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--hub-glass-border)' },
+  tableHeader: { borderBottom: '1px solid var(--color-border-light)', padding: '12px var(--space-3)', textAlign: 'left', fontWeight: 'var(--font-weight-semibold)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-text-muted)', background: 'var(--color-bg-lighter)' },
+  tableCell: { padding: '12px var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)' },
+  actionsCell: { padding: '12px var(--space-3)', borderBottom: '1px solid var(--color-border-light)', fontSize: 'var(--text-small)', display: 'flex', flexDirection: 'row', gap: 'var(--space-1)', alignItems: 'center', flexWrap: 'nowrap' },
   section: { marginBottom: 'var(--space-6)' },
-  sectionTitle: { margin: '0 0 var(--space-1)', fontSize: 'var(--text-h3)', fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-charcoal)' },
+  sectionTitle: { margin: '0 0 var(--space-1)', fontSize: 30, fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-weight-bold)', letterSpacing: '-0.01em', color: 'var(--color-text-charcoal)' },
   sectionDesc: { margin: '0 0 var(--space-3)', fontSize: 'var(--text-small)', color: 'var(--color-text-steel)' },
   label: { display: 'block', marginBottom: 'var(--space-1)', fontSize: 'var(--text-small)', fontWeight: 'var(--font-weight-medium)', color: 'var(--color-text-charcoal)' },
   policyGroupFirst: { marginTop: 0, paddingTop: 0 },
