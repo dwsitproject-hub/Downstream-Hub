@@ -571,3 +571,6 @@ input::placeholder, textarea::placeholder {
   .hub-btn-primary::after, .hub-rise, .hub-skeleton { animation: none !important; }
   .hub-card, .hub-card:hover { transition: none; transform: none; }
 }
+
+/* Access overview: hide the native disclosure marker (a chevron is drawn instead) */
+.ao-summary::-webkit-details-marker { display: none; }
