@@ -17,6 +17,7 @@ const analyticsRoutes = require('./routes/analytics');
 const sdkRoutes = require('./routes/sdk');
 const sentinelRoutes = require('./routes/sentinel');
 const appGroupsRoutes = require('./routes/appGroups');
+const accessOverviewRoutes = require('./routes/accessOverview');
 const serviceRoutes = require('./routes/service');
 const serviceControlRoutes = require('./routes/serviceControl');
 
@@ -83,6 +84,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/applications', applicationsRoutes);
 app.use('/api/app-groups', appGroupsRoutes);
+app.use('/api/access-overview', accessOverviewRoutes);
 app.use('/api/allowed-domains', allowedDomainsRoutes);
 app.use('/api/business-units', businessUnitsRoutes);
 app.use('/api/users', usersRoutes);
