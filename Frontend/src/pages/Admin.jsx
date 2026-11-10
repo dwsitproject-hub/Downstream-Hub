@@ -9,6 +9,7 @@ import AdminModal from '../components/admin/AdminModal';
 import AdminFormModal from '../components/admin/AdminFormModal';
 import AnalyticsPanel from '../components/admin/AnalyticsPanel';
 import ApplicationsView from '../components/admin/ApplicationsView';
+import AccessOverview from '../components/admin/AccessOverview';
 import ThemeToggle from '../components/ThemeToggle';
 import { Icon } from '../components/HubIcons';
 
@@ -16,6 +17,7 @@ const SECTIONS = [
   { id: 'applications', label: 'Applications', path: 'applications', group: 'Catalogue', icon: 'grid' },
   { id: 'users', label: 'Users', path: 'users', group: 'People & access', icon: 'users' },
   { id: 'business-units', label: 'Departments', path: 'business-units', group: 'People & access', icon: 'building' },
+  { id: 'access-overview', label: 'Access overview', path: 'access-overview', group: 'People & access', icon: 'shield' },
   { id: 'domains', label: 'Domains', path: 'domains', group: 'People & access', icon: 'globe' },
   { id: 'password-policy', label: 'Password policy', path: 'password-policy', group: 'People & access', icon: 'lock' },
   { id: 'analytics', label: 'Analytic', path: 'analytics', group: 'Insight', icon: 'chart' },
@@ -776,9 +778,11 @@ export default function Admin() {
             </div>
           ))}
         </nav>
-        <main style={activeSection === 'analytics' || activeSection === 'applications' ? { ...styles.main, maxWidth: 'none' } : styles.main}>
+        <main style={['analytics', 'applications', 'access-overview'].includes(activeSection) ? { ...styles.main, maxWidth: 'none' } : styles.main}>
           {error && <div style={styles.error}>{error}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
+
+          {activeSection === 'access-overview' && <AccessOverview />}
 
           {activeSection === 'domains' && (
         <section style={styles.section}>
